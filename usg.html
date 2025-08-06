@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Ультразвуковое исследование</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="navbar">
+    <div class="navbar-logo">
+      <img src="{{ url_for('static', filename='images/logo.jpg') }}" alt="myZone">
+      <span>myZone</span>
+    </div>
+    <nav class="navbar-links">
+      <a href="/">Главная</a>
+      <a href="/risk_form">Проверка риска</a>
+      <a href="/self_exam">Самообследование</a>
+      <a href="/usg">Ультразвуковое исследование</a>
+      <select onchange="changeLang(this)">
+        <option disabled selected>🌐 Язык</option>
+        <option value="ru">Русский</option>
+        <option value="kz">Қазақша</option>
+        <option value="en">English</option>
+      </select>
+    </nav>
+    <a class="navbar-login" href="#">Войти</a>
+  </div>
+
+<main class="container">
+  <h1>Ультразвуковое исследование</h1>
+  <form method="post" style="text-align:center; margin-bottom:2em;">
+    <button type="submit" name="usg_result" value="tumour" class="usg-btn red">Опухоль обнаружена</button>
+    <button type="submit" name="usg_result" value="no_tumour" class="usg-btn green">Опухоль не обнаружена</button>
+  </form>
+  {% if status %}
+    <div class="usg-result {% if status == 'Опухоль обнаружена' %}red-text{% else %}green-text{% endif %}">
+      <div class="usg-center">
+        {% if status == 'Опухоль обнаружена' %}
+          <h2>🚨 {{ status }}</h2>
+          <p>{{ advice }}</p>
+        {% else %}
+          <h2>🟢 {{ status }}</h2>
+          <p>{{ advice }}</p>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</main>
+
+<form method="post" style="text-align:center; margin-bottom:2em;">
+  <button type="submit" name="usg_result" value="tumour"
+    class="usg-btn red {% if status == 'Опухоль обнаружена' %}selected{% endif %}">
+    Опухоль обнаружена
+  </button>
+  <button type="submit" name="usg_result" value="no_tumour"
+    class="usg-btn green {% if status == 'Опухоль не обнаружена' %}selected{% endif %}">
+    Опухоль не обнаружена
+  </button>
+</form>
+
+</body>
+</html>

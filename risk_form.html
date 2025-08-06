@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Проверка риска – myZone</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="navbar">
+    <div class="navbar-logo">
+      <img src="{{ url_for('static', filename='images/logo.jpg') }}" alt="myZone">
+      <span>myZone</span>
+    </div>
+    <nav class="navbar-links">
+      <a href="/">Главная</a>
+      <a href="/risk_form">Проверка риска</a>
+      <a href="/self_exam">Самообследование</a>
+      <a href="/usg">Ультразвуковое исследование</a>
+      <select onchange="changeLang(this)">
+        <option disabled selected>🌐 Язык</option>
+        <option value="ru">Русский</option>
+        <option value="kz">Қазақша</option>
+        <option value="en">English</option>
+      </select>
+    </nav>
+    <a class="navbar-login" href="#">Войти</a>
+  </div>
+
+  <script>
+    function changeLang(select) {
+      const lang = select.value;
+      const currentPath = window.location.pathname;
+      const cleanPath = currentPath.replace(/^\/(ru|kz|en)/, '');
+      window.location.href = `/${lang}${cleanPath}`;
+    }
+  </script>
+
+  <main class="form-container">
+    <h1>Оценка риска рака груди</h1>
+    <form method="post" action="/risk_form">
+      <label>Возраст: <input type="number" name="age" required></label><br>
+      <label>Пол:
+        <select name="sex" required>
+          <option value="0">Мужчина</option>
+          <option value="1" selected>Женщина</option>
+        </select>
+      </label><br>
+      <label>ИМТ: <input type="number" step="0.1" name="bmi" required></label><br>
+      <label>История рака в семье:
+        <select name="family_history" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Курение:
+        <select name="smoking" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Потребление алкоголя:
+        <select name="alcohol" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Менструация до 12 лет:
+        <select name="early_periods" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Менопауза после 55 лет:
+        <select name="late_menopause" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Рак яичников в семье:
+        <select name="ovarian_history" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Физическая активность менее 3 раз в неделю:
+        <select name="low_activity" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Прием гормональных препаратов:
+        <select name="hormone_therapy" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Мутации BRCA1/BRCA2:
+        <select name="brca_mutation" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <label>Никогда не были беременны (после 40):
+        <select name="never_pregnant_40" required>
+          <option value="1">Да</option>
+          <option value="0">Нет</option>
+        </select>
+      </label><br>
+      <button type="submit">Проверить риск</button>
+    </form>
+  </main>
+</body>
+</html>

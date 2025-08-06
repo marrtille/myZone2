@@ -1,0 +1,55 @@
+<!-- templates/result.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>myZone – Результат оценки риска</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <div class="navbar">
+    <div class="navbar-logo">
+      <img src="{{ url_for('static', filename='images/logo.jpg') }}" alt="myZone">
+      <span>myZone</span>
+    </div>
+    <nav class="navbar-links">
+      <a href="/">Главная</a>
+      <a href="/risk_form">Проверка риска</a>
+      <a href="/self_exam">Самообследование</a>
+      <a href="/usg">Ультразвуковое исследование</a>
+      <select onchange="changeLang(this)">
+        <option disabled selected>🌐 Язык</option>
+        <option value="ru">Русский</option>
+        <option value="kz">Қазақша</option>
+        <option value="en">English</option>
+      </select>
+    </nav>
+    <a class="navbar-login" href="#">Войти</a>
+  </div>
+
+  <main style="padding: 3em; text-align: center;">
+    <h1 style="color: #cc3366; font-size: 2.2em; margin-bottom: 0.5em;">{{ title }}</h1>
+    <p style="font-size: 1.2em; margin-bottom: 2em;">{{ advice }}</p>
+
+    {% if shap_img %}
+      <div style="margin: 2em auto; max-width: 700px;">
+        <h3>🔍 Визуализация вклада факторов:</h3>
+<img src="{{ url_for('static', filename='shap_feature_importance.png') }}" alt="SHAP график" style="max-width: 100%; height: auto;">
+      </div>
+    {% endif %}
+
+    <a href="/" class="cta-button">🏠 Назад на главную</a>
+  </main>
+
+  <script>
+    function changeLang(select) {
+      const lang = select.value;
+      const currentPath = window.location.pathname;
+      const cleanPath = currentPath.replace(/^\/(ru|kz|en)/, '');
+      window.location.href = `/${lang}${cleanPath}`;
+    }
+  </script>
+</body>
+</html>

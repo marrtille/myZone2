@@ -1,0 +1,87 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>myZone — здоровье в ваших руках</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+
+  <div class="navbar">
+    <div class="navbar-logo">
+      <img src="{{ url_for('static', filename='images/logo.jpg') }}" alt="myZone">
+      <span>myZone</span>
+    </div>
+    <nav class="navbar-links">
+      <a href="/">Главная</a>
+      <a href="/risk_form">Проверка риска</a>
+      <a href="/self_exam">Самообследование</a>
+      <a href="/usg">Ультразвуковое исследование</a>
+      <select onchange="changeLang(this)">
+        <option disabled selected>🌐 Язык</option>
+        <option value="ru">Русский</option>
+        <option value="kz">Қазақша</option>
+        <option value="en">English</option>
+      </select>
+    </nav>
+    <a class="navbar-login" href="#">Войти</a>
+  </div>
+
+<header class="hero">
+  <div class="overlay"></div>
+  <div class="hero-content">
+    <h1>myZone</h1>
+    <p>Ваше здоровье — наша забота. Цифровая экосистема для вас.</p>
+    <a href="#faq" class="start-button">Начать</a>
+  </div>
+  <img src="{{ url_for('static', filename='images/index-background1.jpg') }}" class="background-image" alt="Здоровье" />
+</header>
+
+
+
+
+<section id="faq" class="faq">
+  <h2>Часто задаваемые вопросы</h2>
+  <details>
+    <summary>Что такое myZone?</summary>
+    <p>Это цифровая экосистема для самодиагностики и профилактики рака груди.</p>
+  </details>
+  <details>
+    <summary>Как работает оценка риска?</summary>
+    <p>Вы отвечаете на вопросы — ИИ выдает рекомендацию на основе модели.</p>
+  </details>
+  <details>
+    <summary>Какие функции есть?</summary>
+    <p>Самообследование, блог, личный кабинет, визуализация и многое другое.</p>
+  </details>
+</section>
+
+<section class="about">
+  <div class="about-text">
+    <h2>myZone: Забота о вас</h2>
+    <p>Создано специально для женщин — в розовом, адаптивном, современном дизайне.</p>
+  </div>
+  <div class="about-img">
+    <img src="/static/about-pink.jpg" alt="О платформе">
+  </div>
+</section>
+
+<section class="ticker">
+  <div class="ticker-content">
+    <span>Самообследование *</span>
+    <span>Персональный кабинет *</span>
+    <span>Визуализация данных *</span>
+    <span>Оценка риска *</span>
+  </div>
+</section>
+
+<footer class="footer">
+  <p>© 2025 myZone. Все права защищены.</p>
+  <p>Контакты: support@myzone.kz | +7 (777) 123-45-67</p>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>myZone – Самообследование</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="navbar">
+    <div class="navbar-logo">
+      <img src="{{ url_for('static', filename='images/logo.jpg') }}" alt="myZone">
+      <span>myZone</span>
+    </div>
+    <nav class="navbar-links">
+      <a href="/">Главная</a>
+      <a href="/risk_form">Проверка риска</a>
+      <a href="/self_exam">Самообследование</a>
+      <a href="/usg">Ультразвуковое исследование</a>
+      <select onchange="changeLang(this)">
+        <option disabled selected>🌐 Язык</option>
+        <option value="ru">Русский</option>
+        <option value="kz">Қазақша</option>
+        <option value="en">English</option>
+      </select>
+    </nav>
+    <a class="navbar-login" href="#">Войти</a>
+  </div>
+
+<main class="container">
+  <h1>🔍 Руководство по самообследованию груди</h1>
+  <p>Следуйте этим шагам, чтобы провести самообследование груди. Адаптировано с сайта 
+    <a href="https://www.nationalbreastcancer.org/breast-self-exam/" target="_blank">Национального фонда по борьбе с раком груди</a>.
+  </p>
+  <ol>
+    <li>
+      Станьте перед зеркалом. Осмотрите грудь на наличие изменений формы, отека или втяжения кожи.
+      <br>
+      <img src="{{ url_for('static', filename='images/mirror.png') }}" alt="Перед зеркалом" style="max-width:120px; margin-top:8px;">
+    </li>
+    <li>Поднимите руки и повторно осмотрите грудь.</li>
+    <li>
+      Лежа, используйте подушечки пальцев, чтобы ощупать грудь круговыми движениями.
+      <br>
+      <img src="{{ url_for('static', filename='images/laying.png') }}" alt="Лежа" style="max-width:120px; margin-top:8px;">
+    </li>
+    <li>Проверьте все области от ключицы до живота и от подмышек до середины груди.</li>
+    <li>Осторожно сожмите сосок, чтобы проверить наличие выделений.</li>
+    <li>
+      Повторите в душе, когда кожа наиболее чувствительна.
+      <br>
+      <img src="{{ url_for('static', filename='images/shower.png') }}" alt="В душе" style="max-width:120px; margin-top:8px;">
+    </li>
+  </ol>
+  <p class="warning">🔔 Если вы заметили что-либо необычное, обратитесь к врачу.</p>
+  <a href="/" class="cta-button">🏠 Назад на главную</a>
+</main>
+
+  <script>
+    function changeLang(select) {
+      const lang = select.value;
+      const currentPath = window.location.pathname;
+      const cleanPath = currentPath.replace(/^\/(ru|kz|en)/, '');
+      window.location.href = `/${lang}${cleanPath}`;
+    }
+  </script>
+</body>
+</html>
