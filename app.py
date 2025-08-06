@@ -96,5 +96,12 @@ def usg():
             advice = "🟢 Всё хорошо! Продолжайте регулярные обследования и заботьтесь о здоровье."
     return render_template("usg.html", status=status, advice=advice)
 
+app.config['EXPLAIN_TEMPLATE_LOADING'] = True
+import os
+print("Working directory:", os.getcwd())
+print("Templates dir contents:", os.listdir(os.path.join(os.getcwd(), 'templates')))
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
