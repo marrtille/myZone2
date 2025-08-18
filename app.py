@@ -1,4 +1,5 @@
-# app.py (safe, minimal, working)
+cp app.py app.py.bak 2>/dev/null || true
+cat > app.py << 'PY'
 from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session
 import os, uuid, sqlite3
 import numpy as np
@@ -6,19 +7,16 @@ import pandas as pd
 import joblib
 from datetime import datetime, timedelta
 
-# plotting (for the simple feature bar)
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# optional SHAP (we'll try; fall back gracefully)
 try:
     import shap
     SHAP_AVAILABLE = True
 except Exception:
     SHAP_AVAILABLE = False
 
-# PDF
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
@@ -27,17 +25,14 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(APP_DIR, "static")
 TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
 DB_PATH = os.path.join(APP_DIR, "diary.db")
-
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
-# Load your model
 MODEL_PATH = os.path.join(APP_DIR, "breast_risk_model.pkl")
 model = joblib.load(MODEL_PATH)
 
-# ---- helpers ----
 def get_or_create_user_id():
     if "user_id" not in session:
         session["user_id"] = str(uuid.uuid4())
@@ -59,32 +54,21 @@ def init_db():
             notes TEXT
         )
     """)
-    con.commit()
-    con.close()
-
+    con.commit(); con.close()
 init_db()
 
 MODIFIABLE = {"smoking","alcohol","low_activity","bmi","hormone_therapy"}
-
 HUMAN_NAMES = {
-    "smoking":"курение",
-    "alcohol":"регулярный алкоголь",
-    "low_activity":"низкая физическая активность",
-    "bmi":"повышенный индекс массы тела (BMI)",
-    "hormone_therapy":"гормональная терапия",
-    "family_history":"семейная история рака груди",
-    "early_periods":"раннее начало менструаций",
-    "late_menopause":"поздняя менопауза",
-    "ovarian_cancer_history":"личная/семейная история рака яичников",
-    "brca_mutation":"мутация BRCA",
-    "no_pregnancy_over_40":"отсутствие беременности до 40",
-    "age":"возраст",
-    "sex":"пол",
+    "smoking":"курение","alcohol":"регулярный алкоголь","low_activity":"низкая физическая активность",
+    "bmi":"повышенный индекс массы тела (BMI)","hormone_therapy":"гормональная терапия",
+    "family_history":"семейная история рака груди","early_periods":"раннее начало менструаций",
+    "late_menopause":"поздняя менопауза","ovarian_cancer_history":"личная/семейная история рака яичников",
+    "brca_mutation":"мутация BRCA","no_pregnancy_over_40":"отсутствие беременности до 40",
+    "age":"возраст","sex":"пол",
 }
 
 @app.route("/")
 def index():
-    # show simple links so you can reach new pages
     return render_template("index.html") if os.path.exists(os.path.join(TEMPLATES_DIR,"index.html")) else """
     <h1>myZone</h1>
     <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a></p>
@@ -113,79 +97,52 @@ def risk_form():
         """
 
     f = request.form
-    def geti(n, default=0): 
+    def geti(n, default=0):
         try: return int(f.get(n, default))
         except: return int(float(f.get(n, default)))
-    def getf(n, default=0.0): 
+    def getf(n, default=0.0):
         try: return float(f.get(n, default))
         except: return 0.0
 
     X = pd.DataFrame([{
-        "age": geti("age"),
-        "sex": geti("sex"),
-        "bmi": getf("bmi"),
-        "family_history": geti("family_history"),
-        "smoking": geti("smoking"),
-        "alcohol": geti("alcohol"),
-        "early_periods": geti("early_periods"),
-        "late_menopause": geti("late_menopause"),
-        "ovarian_cancer_history": geti("ovarian_history"),
-        "low_activity": geti("low_activity"),
-        "hormone_therapy": geti("hormone_therapy"),
-        "brca_mutation": geti("brca_mutation"),
-        "no_pregnancy_over_40": geti("never_pregnant_40"),
+        "age": geti("age"), "sex": geti("sex"), "bmi": getf("bmi"),
+        "family_history": geti("family_history"), "smoking": geti("smoking"),
+        "alcohol": geti("alcohol"), "early_periods": geti("early_periods"),
+        "late_menopause": geti("late_menopause"), "ovarian_cancer_history": geti("ovarian_history"),
+        "low_activity": geti("low_activity"), "hormone_therapy": geti("hormone_therapy"),
+        "brca_mutation": geti("brca_mutation"), "no_pregnancy_over_40": geti("never_pregnant_40"),
     }])
 
-    # --- robust risk mapping using predict_proba
-    risk_label = "Средний риск"  # default
-    risk_score = None
+    # robust risk mapping
+    risk_label = "Средний риск"
     try:
         proba = model.predict_proba(X)
-        # multi-class (expecting [low, mid, high] = [0,1,2])
         if proba.shape[1] == 3:
-            cls = np.argmax(proba[0])
-            risk_score = float(proba[0, cls])
+            cls = int(np.argmax(proba[0]))
             risk_label = ["Низкий риск","Средний риск","Высокий риск"][cls]
         else:
-            # binary: map p(1) to thresholds
             p1 = float(proba[0,1])
-            risk_score = p1
-            if p1 < 0.33:
-                risk_label = "Низкий риск"
-            elif p1 < 0.66:
-                risk_label = "Средний риск"
-            else:
-                risk_label = "Высокий риск"
+            if p1 < 0.33: risk_label = "Низкий риск"
+            elif p1 < 0.66: risk_label = "Средний риск"
+            else: risk_label = "Высокий риск"
     except Exception:
-        # fallback to model.predict only
         pred = int(model.predict(X)[0])
         risk_label = {0:"Низкий риск",1:"Средний риск",2:"Высокий риск"}.get(pred,"Средний риск")
 
-    # --- explainability: simple, reliable, modifiable-focused
-    # Try SHAP; if it fails, use a simple bar from feature importances as proxy
+    # explainability
     feature_names = list(X.columns)
     contrib = None
-    shap_err = None
     if SHAP_AVAILABLE:
         try:
-            explainer = shap.Explainer(model, X)  # uses model-agnostic path if needed
+            explainer = shap.Explainer(model, X)
             sv = explainer(X)
             contrib = sv.values[0] if hasattr(sv, "values") else None
-        except Exception as e:
-            shap_err = str(e)
-
-    if contrib is None:
-        # fallback: use model.feature_importances_ if available, sign unknown -> use +values
-        try:
-            fi = getattr(model, "feature_importances_", None)
-            if fi is not None:
-                contrib = np.array(fi, dtype=float)
-            else:
-                contrib = np.zeros(len(feature_names))
         except Exception:
-            contrib = np.zeros(len(feature_names))
+            contrib = None
+    if contrib is None:
+        fi = getattr(model, "feature_importances_", None)
+        contrib = np.array(fi, dtype=float) if fi is not None else np.zeros(len(feature_names))
 
-    # build textual reason: top positive drivers (or just top magnitudes)
     order = np.argsort(np.abs(contrib))[::-1]
     top3 = []
     for idx in order[:3]:
@@ -193,25 +150,21 @@ def risk_form():
         human = HUMAN_NAMES.get(name, name)
         mod = " (можно изменить)" if name in MODIFIABLE else " (неизменяемый фактор)"
         top3.append(f"• {human}{mod}")
-
     shap_reason = "Этот балл повышается из-за:\n" + "\n".join(top3) if top3 else None
 
-    # make a simple bar plot (not SHAP interaction!) so you don’t get that weird scatter
     try:
         top_k = min(8, len(feature_names))
         sel = order[:top_k]
         plt.figure(figsize=(5, 3.5), dpi=160)
         plt.barh([feature_names[i] for i in sel][::-1], np.abs(contrib[sel])[::-1])
-        plt.xlabel("вклад признака (условно, чем больше — тем важнее)")
+        plt.xlabel("вклад признака (чем больше — тем важнее)")
         plt.tight_layout()
         feat_img = os.path.join(STATIC_DIR, "feature_importance.png")
-        plt.savefig(feat_img, bbox_inches="tight")
-        plt.close()
+        plt.savefig(feat_img, bbox_inches="tight"); plt.close()
         shap_img_url = url_for("static", filename="feature_importance.png")
     except Exception:
         shap_img_url = None
 
-    # save for export/ics
     session["last_input"] = X.to_dict(orient="records")[0]
     session["last_risk_label"] = risk_label
     session["last_shap_top"] = top3
@@ -227,19 +180,17 @@ def risk_form():
         export_pdf_url=url_for("export_pdf"),
         reminder_ics_url=url_for("reminder_ics"),
         diary_url=url_for("diary"),
-        self_exam_url=url_for("self_exam")
+        self_exam_url=url_for("self_exam"),
     )
 
-# ----- Self-exam page
 @app.route("/self_exam")
 def self_exam():
     return render_template("self_exam.html") if os.path.exists(os.path.join(TEMPLATES_DIR,"self_exam.html")) else """
     <h2>Самообследование</h2>
     <img src="/static/laying.png" alt="Положение лёжа">
-    <p>Лёжа, рука за головой. Используйте подушку под плечо. Круговыми движениями прощупайте грудь по квадрантам.</p>
+    <p>Лёжа, рука за головой. Круговыми движениями прощупайте грудь по квадрантам.</p>
     """
 
-# ----- Diary
 @app.route("/diary", methods=["GET","POST"])
 def diary():
     uid = get_or_create_user_id()
@@ -252,12 +203,11 @@ def diary():
             "discharge": int(request.form.get("discharge",0)),
             "notes": request.form.get("notes","").strip()
         }
-        con = sqlite3.connect(DB_PATH)
-        cur = con.cursor()
+        con = sqlite3.connect(DB_PATH); cur = con.cursor()
         cur.execute("""INSERT INTO entries(user_id, created_at, breast_side, area, pain, lump, discharge, notes)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (uid, datetime.utcnow().isoformat(), data["breast_side"], data["area"],
-                     data["pain"], data["lump"], data["discharge"], data["notes"]))
+            (uid, datetime.utcnow().isoformat(), data["breast_side"], data["area"],
+             data["pain"], data["lump"], data["discharge"], data["notes"]))
         con.commit(); con.close()
         return redirect(url_for("diary"))
 
@@ -278,7 +228,6 @@ def diary_export_json():
     resp.headers["Content-Disposition"] = "attachment; filename=diary_entries.json"
     return resp
 
-# ----- PDF export
 @app.route("/export_pdf")
 def export_pdf():
     inputs = session.get("last_input")
@@ -291,11 +240,9 @@ def export_pdf():
     c = canvas.Canvas(pdf_path, pagesize=A4)
     W,H = A4
     y = H-2*cm
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(2*cm, y, "myZone — Отчёт по оценке риска")
+    c.setFont("Helvetica-Bold", 16); c.drawString(2*cm, y, "myZone — Отчёт по оценке риска")
     y -= 1.0*cm
-    c.setFont("Helvetica", 12)
-    c.drawString(2*cm, y, f"Итоговый риск: {risk_label}")
+    c.setFont("Helvetica", 12); c.drawString(2*cm, y, f"Итоговый риск: {risk_label}")
     y -= 0.8*cm
 
     c.setFont("Helvetica-Bold", 12); c.drawString(2*cm, y, "Входные данные:"); y -= 0.6*cm
@@ -303,7 +250,8 @@ def export_pdf():
     for k,v in inputs.items():
         c.drawString(2.2*cm, y, f"{k}: {v}")
         y -= 0.5*cm
-        if y < 3*cm: c.showPage(); y = H-2*cm; c.setFont("Helvetica",10)
+        if y < 3*cm:
+            c.showPage(); y = H-2*cm; c.setFont("Helvetica",10)
 
     feat_img = os.path.join(STATIC_DIR, "feature_importance.png")
     if os.path.exists(feat_img):
@@ -315,11 +263,10 @@ def export_pdf():
     y = H-3*cm; c.setFont("Helvetica", 10)
     for line in shap_top:
         c.drawString(2.2*cm, y, line); y -= 0.5*cm
-
     c.save()
+
     return send_file(pdf_path, as_attachment=True, download_name="myzone_report.pdf")
 
-# ----- ICS reminder
 @app.route("/reminder_ics")
 def reminder_ics():
     risk_label = session.get("last_risk_label", "Низкий риск")
@@ -348,3 +295,4 @@ END:VCALENDAR
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+PY
