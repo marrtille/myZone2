@@ -1,1 +1,175 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>myZone — Дневник симптомов</title>
+  <style>
+    :root{
+      --pink:#ff4d88; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#fafafa;
+      --card:#ffffff; --radius:14px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; background:var(--bg); color:var(--ink);
+      font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    }
+    .shell{max-width:1000px; margin:24px auto; padding:0 16px}
+    .nav{display:flex; gap:14px; align-items:center; margin-bottom:18px}
+    .nav a{color:var(--muted); text-decoration:none; font-weight:600}
+    .nav a:hover{color:var(--ink)}
+    h1{margin:8px 0 6px; font-size:28px}
+    p.lead{margin:0 0 18px; color:var(--muted)}
+
+    .card{background:var(--card); border:1px solid var(--line);
+      border-radius:var(--radius); padding:16px; box-shadow:0 2px 12px rgba(0,0,0,.04);}
+
+    .grid{display:grid; gap:14px}
+    @media (min-width:720px){ .grid.cols-2{grid-template-columns:1fr 1fr} }
+
+    label{display:block; font-weight:600; margin:8px 0 6px}
+    input[type="number"], select, textarea{
+      width:100%; padding:10px 12px; border:1px solid var(--line);
+      border-radius:10px; background:#fff; outline:none;
+    }
+    textarea{min-height:84px; resize:vertical}
+
+    .actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px}
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      padding:10px 16px; border-radius:10px; border:1px solid transparent; cursor:pointer;
+      text-decoration:none; font-weight:700;
+    }
+    .btn.primary{background:var(--pink); color:#fff}
+    .btn.ghost{background:#fff; color:var(--ink); border-color:var(--line)}
+    .btn:hover{filter:brightness(0.98)}
+
+    table{width:100%; border-collapse:collapse; background:#fff; border-radius:var(--radius); overflow:hidden}
+    th,td{padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; font-size:14px}
+    th{background:#f8f8f8; font-weight:700}
+    tr:last-child td{border-bottom:none}
+
+    figure{margin:18px 0 10px}
+    figure img{max-width:100%; height:auto; border-radius:12px; border:1px solid var(--line)}
+    figcaption{font-size:13px; color:var(--muted); margin-top:6px}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="nav">
+      <a href="{{ url_for('index') }}">Главная</a>
+      <a href="{{ url_for('risk_form') }}">Оценка риска</a>
+      <a href="{{ url_for('self_exam') }}">Самообследование</a>
+      <a href="{{ url_for('diary') }}" aria-current="page" style="color:var(--ink)">Дневник</a>
+    </nav>
+
+    <header>
+      <h1>Дневник симптомов</h1>
+      <p class="lead">Записывайте наблюдения по дням — это помогает отслеживать изменения и делиться данными с врачом.</p>
+    </header>
+
+    <!-- Form -->
+    <section class="card" aria-label="Новая запись">
+      <form method="post">
+        <div class="grid cols-2">
+          <div>
+            <label for="breast_side">Сторона</label>
+            <select id="breast_side" name="breast_side" required>
+              <option value="left">Левая</option>
+              <option value="right">Правая</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="area">Область (квадрант)</label>
+            <select id="area" name="area" required>
+              <option value="outer-upper">Наружный верхний</option>
+              <option value="outer-lower">Наружный нижний</option>
+              <option value="inner-upper">Внутренний верхний</option>
+              <option value="inner-lower">Внутренний нижний</option>
+              <option value="areola">Околососковая зона</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="pain">Боль (0–3)</label>
+            <input id="pain" name="pain" type="number" min="0" max="3" step="1" value="0" required />
+          </div>
+
+          <div>
+            <label for="lump">Уплотнение</label>
+            <select id="lump" name="lump">
+              <option value="0">Нет</option>
+              <option value="1">Да</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="discharge">Выделения из соска</label>
+            <select id="discharge" name="discharge">
+              <option value="0">Нет</option>
+              <option value="1">Да</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="notes">Заметки</label>
+            <textarea id="notes" name="notes" placeholder="Кратко опишите, что заметили (например: «лёгкая боль 2 дня», «уплотнение уменьшилось», «без изменений»)."></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" type="submit">Добавить запись</button>
+          <a class="btn ghost" href="{{ url_for('diary_export_json') }}">Экспорт JSON</a>
+          <a class="btn ghost" href="{{ url_for('self_exam') }}">Памятка по самообследованию</a>
+        </div>
+      </form>
+    </section>
+
+    <!-- Visual guide -->
+    <figure>
+      <img src="{{ url_for('static', filename='laying.png') }}" alt="Положение лёжа для самообследования груди (рука за головой)" />
+      <figcaption>Рекомендованное положение для самообследования: лёжа, рука за головой. Используйте подушку под плечо для удобства.</figcaption>
+    </figure>
+
+    <!-- Entries table -->
+    <section aria-label="Список записей">
+      <h2>Мои записи</h2>
+
+      {% if entries and entries|length > 0 %}
+        <table role="table" aria-label="Записи дневника">
+          <thead>
+            <tr>
+              <th scope="col">Дата</th>
+              <th scope="col">Сторона</th>
+              <th scope="col">Зона</th>
+              <th scope="col">Боль</th>
+              <th scope="col">Уплотнение</th>
+              <th scope="col">Выделения</th>
+              <th scope="col">Заметки</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in entries %}
+              <tr>
+                <td>{{ (e.created_at or '')[:19].replace('T',' ') }}</td>
+                <td>{{ 'левая' if e.breast_side == 'left' else 'правая' }}</td>
+                <td>{{ e.area }}</td>
+                <td>{{ e.pain }}</td>
+                <td>{{ 'да' if e.lump else 'нет' }}</td>
+                <td>{{ 'да' if e.discharge else 'нет' }}</td>
+                <td>{{ e.notes }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="card" style="margin-top:8px">
+          Пока записей нет. Добавьте первую запись выше.
+        </div>
+      {% endif %}
+    </section>
+  </div>
+</body>
+</html>
 
