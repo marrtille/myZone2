@@ -33,6 +33,25 @@
     <h1 style="color: #cc3366; font-size: 2.2em; margin-bottom: 0.5em;">{{ title }}</h1>
     <p style="font-size: 1.2em; margin-bottom: 2em;">{{ advice }}</p>
 
+    {% if shap_reason %}
+  <div style="margin:12px 0; padding:10px; border:1px solid #eee; border-radius:10px">
+    <strong>Почему такой балл:</strong><br>
+    {{ shap_reason|replace('\n','<br>')|safe }}
+  </div>
+{% endif %}
+
+{% if shap_img_url %}
+  <img src="{{ shap_img_url }}" alt="Важность признаков" style="max-width:100%; height:auto; border:1px solid #eee; border-radius:8px; margin:8px 0;">
+{% endif %}
+
+<p>
+  {% if export_pdf_url %}<a href="{{ export_pdf_url }}">Скачать PDF</a>{% endif %}
+  {% if reminder_ics_url %} • <a href="{{ reminder_ics_url }}">Напоминание</a>{% endif %}
+  {% if diary_url %} • <a href="{{ diary_url }}">Дневник симптомов</a>{% endif %}
+  {% if self_exam_url %} • <a href="{{ self_exam_url }}">Памятка</a>{% endif %}
+</p>
+
+
     {% if shap_img %}
       <div style="margin: 2em auto; max-width: 700px;">
         <h3>🔍 Визуализация вклада факторов:</h3>
@@ -59,4 +78,5 @@
   </script>
 </body>
 </html>
+
 
