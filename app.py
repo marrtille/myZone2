@@ -127,8 +127,8 @@ def risk_form():
         pred = int(model.predict(X)[0])
         risk_label = {0:"Низкий риск",1:"Средний риск",2:"Высокий риск"}.get(pred,"Средний риск")
 
-    # explainability
-    feature_names = list(X.columns)
+  # --- explainability (safe & 1-D)
+feature_names = list(X.columns)
 contrib = None
 
 if SHAP_AVAILABLE:
@@ -143,7 +143,7 @@ if SHAP_AVAILABLE:
                 arr = arr[0]
             # reduce to 1-D (n_features)
             if arr.ndim >= 2:
-                # common case: (n_features, n_classes) -> mean across classes
+                # common: (n_features, n_classes) -> mean across classes
                 arr = arr.mean(axis=-1)
             contrib = arr
     except Exception:
@@ -156,10 +156,12 @@ if contrib is None:
     else:
         contrib = np.zeros(len(feature_names), dtype=float)
 
-# Final safety: ensure 1-D and right length
-contrib = np.asarray(contrib, dtype=float).reshape(-1)
+# Final safety: ensure 1-D length == n_features
+contrib = np.asarray(contrib, dtype=float)
+if contrib.ndim >= 2:
+    contrib = contrib.mean(axis=-1)
+contrib = contrib.reshape(-1)
 if contrib.shape[0] != len(feature_names):
-    # resize conservatively to match features (fallback)
     contrib = np.resize(contrib, (len(feature_names),))
 
 order = np.argsort(np.abs(contrib))[::-1]
@@ -182,6 +184,7 @@ for idx in order[:3]:
     mod = " (можно изменить)" if name in MODIFIABLE else " (неизменяемый фактор)"
     top3.append(f"• {human}{mod}")
 shap_reason = "Этот балл повышается из-за:\n" + "\n".join(top3) if top3 else None
+
 
 
     try:
@@ -328,5 +331,6 @@ END:VCALENDAR
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 PY
+
 
 
