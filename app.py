@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session
+feature_namesfrom flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session
 import os, uuid, sqlite3
 import numpy as np
 import pandas as pd
@@ -129,26 +129,60 @@ def risk_form():
 
     # explainability
     feature_names = list(X.columns)
-    contrib = None
-    if SHAP_AVAILABLE:
-        try:
-            explainer = shap.Explainer(model, X)
-            sv = explainer(X)
-            contrib = sv.values[0] if hasattr(sv, "values") else None
-        except Exception:
-            contrib = None
-    if contrib is None:
-        fi = getattr(model, "feature_importances_", None)
-        contrib = np.array(fi, dtype=float) if fi is not None else np.zeros(len(feature_names))
+contrib = None
 
-    order = np.argsort(np.abs(contrib))[::-1]
-    top3 = []
-    for idx in order[:3]:
-        name = feature_names[idx]
-        human = HUMAN_NAMES.get(name, name)
-        mod = " (можно изменить)" if name in MODIFIABLE else " (неизменяемый фактор)"
-        top3.append(f"• {human}{mod}")
-    shap_reason = "Этот балл повышается из-за:\n" + "\n".join(top3) if top3 else None
+if SHAP_AVAILABLE:
+    try:
+        explainer = shap.Explainer(model, X)
+        sv = explainer(X)  # sv.values could be (1, n_features) or (1, n_features, n_classes)
+        raw = getattr(sv, "values", None)
+        if raw is not None:
+            arr = np.asarray(raw)
+            # take instance 0 if present
+            if arr.ndim >= 2 and arr.shape[0] == 1:
+                arr = arr[0]
+            # reduce to 1-D (n_features)
+            if arr.ndim >= 2:
+                # common case: (n_features, n_classes) -> mean across classes
+                arr = arr.mean(axis=-1)
+            contrib = arr
+    except Exception:
+        contrib = None
+
+if contrib is None:
+    fi = getattr(model, "feature_importances_", None)
+    if fi is not None:
+        contrib = np.asarray(fi, dtype=float)
+    else:
+        contrib = np.zeros(len(feature_names), dtype=float)
+
+# Final safety: ensure 1-D and right length
+contrib = np.asarray(contrib, dtype=float).reshape(-1)
+if contrib.shape[0] != len(feature_names):
+    # resize conservatively to match features (fallback)
+    contrib = np.resize(contrib, (len(feature_names),))
+
+order = np.argsort(np.abs(contrib))[::-1]
+
+MODIFIABLE = {"smoking","alcohol","low_activity","bmi","hormone_therapy"}
+HUMAN_NAMES = {
+    "smoking":"курение","alcohol":"регулярный алкоголь","low_activity":"низкая физическая активность",
+    "bmi":"повышенный индекс массы тела (BMI)","hormone_therapy":"гормональная терапия",
+    "family_history":"семейная история рака груди","early_periods":"раннее начало менструаций",
+    "late_menopause":"поздняя менопауза","ovarian_cancer_history":"личная/семейная история рака яичников",
+    "brca_mutation":"мутация BRCA","no_pregnancy_over_40":"отсутствие беременности до 40",
+    "age":"возраст","sex":"пол",
+}
+
+top3 = []
+for idx in order[:3]:
+    idx = int(idx)  # ensure scalar
+    name = feature_names[idx]
+    human = HUMAN_NAMES.get(name, name)
+    mod = " (можно изменить)" if name in MODIFIABLE else " (неизменяемый фактор)"
+    top3.append(f"• {human}{mod}")
+shap_reason = "Этот балл повышается из-за:\n" + "\n".join(top3) if top3 else None
+
 
     try:
         top_k = min(8, len(feature_names))
@@ -294,4 +328,5 @@ END:VCALENDAR
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 PY
+
 
