@@ -41,6 +41,12 @@
     {% endif %}
 
     <a href="/" class="cta-button">🏠 Назад на главную</a>
+
+    {% if export_pdf_url %}<a href="{{ export_pdf_url }}">Скачать PDF</a>{% endif %}
+{% if reminder_ics_url %} • <a href="{{ reminder_ics_url }}">Напоминание</a>{% endif %}
+{% if diary_url %} • <a href="{{ diary_url }}">Дневник симптомов</a>{% endif %}
+{% if shap_reason %}<p>{{ shap_reason|replace('\n','<br>')|safe }}</p>{% endif %}
+
   </main>
 
   <script>
@@ -53,3 +59,4 @@
   </script>
 </body>
 </html>
+
