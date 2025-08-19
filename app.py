@@ -73,103 +73,14 @@ def index():
     <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a></p>
     """
 
-@app.route("/risk_form", methods=["GET", "POST"])
+@app.route("/risk_form", methods=["POST"])
 def risk_form():
-    if request.method == "GET":
-        return render_template("risk_form.html")
-
     try:
-        f = request.form
+        # ---------- Gather inputs
+        X = collect_input(request.form)
+        contrib, risk_label, order, feature_names = model_predict(X)
 
-        def geti(name, default=0):
-            v = f.get(name, default)
-            try:
-                return int(v)
-            except Exception:
-                try:
-                    return int(float(v))
-                except Exception:
-                    return int(default)
-
-        def getf(name, default=0.0):
-            v = f.get(name, default)
-            try:
-                return float(v)
-            except Exception:
-                return float(default)
-
-        X = pd.DataFrame([{
-            "age": geti("age"),
-            "sex": geti("sex"),
-            "bmi": getf("bmi"),
-            "family_history": geti("family_history"),
-            "smoking": geti("smoking"),
-            "alcohol": geti("alcohol"),
-            "early_periods": geti("early_periods"),
-            "late_menopause": geti("late_menopause"),
-            "ovarian_cancer_history": geti("ovarian_history"),
-            "low_activity": geti("low_activity"),
-            "hormone_therapy": geti("hormone_therapy"),
-            "brca_mutation": geti("brca_mutation"),
-            "no_pregnancy_over_40": geti("never_pregnant_40"),
-        }])
-
-        # ---------- Risk label
-        try:
-            proba = model.predict_proba(X)
-            if proba.shape[1] >= 3:
-                cls = int(np.argmax(proba[0]))
-                risk_label = ["Низкий риск","Средний риск","Высокий риск"][cls]
-            else:
-                p1 = float(proba[0,1])
-                risk_label = "Низкий риск" if p1 < 0.33 else ("Средний риск" if p1 < 0.66 else "Высокий риск")
-        except Exception:
-            pred = int(model.predict(X)[0])
-            risk_label = {0:"Низкий риск",1:"Средний риск",2:"Высокий риск"}.get(pred,"Средний риск")
-
-        # ---------- Explainability (force 1-D)
-        feature_names = list(X.columns)
-        contrib = None
-        try:
-            if "shap" in globals():
-                explainer = shap.Explainer(model, X)
-                sv = explainer(X)
-                raw = getattr(sv, "values", None)
-                if raw is not None:
-                    import numpy as _np
-                    arr = _np.asarray(raw)
-                    arr = _np.squeeze(arr)            # drop singleton dims
-                    if arr.ndim == 2:                 # (n_features, n_classes)
-                        arr = arr.mean(axis=1)
-                    elif arr.ndim == 0:
-                        arr = _np.array([float(arr)])
-                    contrib = arr
-        except Exception:
-            contrib = None
-
-        if contrib is None:
-            fi = getattr(model, "feature_importances_", None)
-            contrib = np.array(fi, dtype=float) if fi is not None else np.zeros(len(feature_names), dtype=float)
-
-        contrib = np.asarray(contrib, dtype=float)
-        if contrib.ndim >= 2:
-            contrib = contrib.mean(axis=-1)
-        contrib = contrib.reshape(-1)
-        if contrib.shape[0] != len(feature_names):
-            contrib = np.resize(contrib, (len(feature_names),))
-
-        order = np.argsort(np.abs(contrib))[::-1]
-
-        MODIFIABLE = {"smoking","alcohol","low_activity","bmi","hormone_therapy"}
-        HUMAN_NAMES = {
-            "smoking":"курение","alcohol":"регулярный алкоголь","low_activity":"низкая физическая активность",
-            "bmi":"повышенный индекс массы тела (BMI)","hormone_therapy":"гормональная терапия",
-            "family_history":"семейная история рака груди","early_periods":"раннее начало менструаций",
-            "late_menopause":"поздняя менопауза","ovarian_cancer_history":"личная/семейная история рака яичников",
-            "brca_mutation":"мутация BRCA","no_pregnancy_over_40":"отсутствие беременности до 40",
-            "age":"возраст","sex":"пол",
-        }
-
+        # ---------- Top reasons
         reasons = []
         for idx in order[:3]:
             i = int(idx)
@@ -188,7 +99,6 @@ def risk_form():
             vals = contrib[sel][::-1]
 
             plt.figure(figsize=(7, 4), dpi=160)
-            y = np.arange(len(labels))
             colors = ["tab:red" if v > 0 else "tab:blue" for v in vals]
             plt.barh(labels, vals, color=colors)
             plt.axvline(0, linewidth=1, color="#444")
@@ -228,6 +138,7 @@ def risk_form():
         err = traceback.format_exc()
         print("risk_form ERROR:\n", err)
         return f"<h2>Ошибка обработки формы</h2><pre>{err}</pre>", 500
+
 
 @app.route("/self_exam")
 def self_exam():
