@@ -105,6 +105,37 @@ def api_latest():
 def api_history():
     return jsonify(list(ring))
 
+@app.route("/api/usg_ingest", methods=["POST"])
+def api_usg_ingest():
+    """
+    Принимает JSON от локального моста/ESP:
+    {"device_id":"arduino-001","piezo_mV":123.4,"drop_pct":12.3,"objC":36.5,"ambC":24.0,"ts": 1700000000}
+    Минимум достаточно {"value": <float>} — остальное заполним по умолчанию.
+    """
+    try:
+        j = request.get_json(force=True)
+        dev = str(j.get("device_id", "dev1"))
+        ts  = int(j.get("ts", int(time.time() * 1000)))
+        # допускаем короткую форму
+        if "value" in j and "piezo_mV" not in j:
+            j["piezo_mV"] = float(j["value"])
+
+        rec = {
+            "device_id": dev,
+            "piezo_mV": float(j.get("piezo_mV", 0.0)),
+            "drop_pct": float(j.get("drop_pct", 0.0)),
+            "objC":     float(j.get("objC", 0.0)),
+            "ambC":     float(j.get("ambC", 0.0)),
+            "ts":       ts,
+        }
+        global latest
+        latest = rec
+        ring.append(rec)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 @app.route("/api/stream")
 def api_stream():
     def gen():
@@ -310,20 +341,42 @@ def index():
     <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a> • <a href="/ultrasound">Ультразвуковое исследование</a></p>
     """
 
-@app.route("/ultrasound")
+@app.route("/ultrasound", methods=["GET", "POST"])
 def ultrasound():
-    # Page that subscribes to /api/stream
+    status = None
+    advice = None
+
+    if request.method == "POST":
+        res = request.form.get("usg_result")
+        if res == "tumour":
+            status = "Опухоль обнаружена"
+            advice = "Срочно обратитесь к врачу или в онкоцентр для дообследования."
+        elif res == "no_tumour":
+            status = "Опухоль не обнаружена"
+            advice = "Продолжайте наблюдение и профилактику, при симптомах — к врачу."
+
     if os.path.exists(os.path.join(TEMPLATES_DIR, "ultrasound.html")):
-        return render_template("ultrasound.html", title="Ультразвуковое исследование")
-    # Fallback simple page if template missing
-    return """
+        return render_template("ultrasound.html", status=status, advice=advice)
+
+    # Фолбэк, если шаблона нет
+    base = """
     <h1>Ультразвуковое исследование</h1>
-    <p>Подключаюсь к потоку…</p>
+    <form method="post" style="text-align:center; margin-bottom:2em;">
+      <button type="submit" name="usg_result" value="tumour">Опухоль обнаружена</button>
+      <button type="submit" name="usg_result" value="no_tumour">Опухоль не обнаружена</button>
+    </form>
+    """
+    if status:
+        base += f"<p><b>{status}</b><br>{advice}</p>"
+    # Простейшее подключение к SSE для отладки
+    base += """
     <script>
     const es = new EventSource('/api/stream');
-    es.onmessage = (ev) => { try { const j = JSON.parse(ev.data); console.log(j); } catch(e){} };
+    es.onmessage = (ev) => { try { const j = JSON.parse(ev.data); console.log('stream', j); } catch(e){} };
     </script>
     """
+    return base
+
 
 @app.route("/risk_form", methods=["GET", "POST"])
 def risk_form():
