@@ -502,6 +502,31 @@ def export_pdf():
     c.save()
     return send_file(pdf_path, as_attachment=True, download_name="myzone_report.pdf")
 
+# --- USG page (with and without language prefix) ---
+@app.route("/usg")
+@app.route("/<lang>/usg")
+def usg(lang=None):
+    # если есть шаблон — отрисуем его
+    if os.path.exists(os.path.join(TEMPLATES_DIR, "usg.html")):
+        return render_template("usg.html")
+    # иначе вернём простой fallback-HTML
+    return """
+    <h1>Ультразвуковое исследование (УЗИ)</h1>
+    <p>УЗИ молочных желез — безопасный и безболезненный метод раннего выявления изменений.</p>
+    <h3>Когда проходить УЗИ?</h3>
+    <ul>
+      <li>При жалобах (уплотнение, боль, выделения, изменения кожи/соска)</li>
+      <li>Профилактически: 1 раз в 12–24 месяца (по возрасту и риску)</li>
+      <li>По рекомендации врача при повышенном риске</li>
+    </ul>
+    <h3>Как подготовиться?</h3>
+    <ul>
+      <li>Специальной подготовки не требуется</li>
+      <li>Возьмите с собой предыдущие заключения или снимки</li>
+    </ul>
+    <p><a href="/risk_form">Вернуться к оценке риска</a></p>
+    """
+
 @app.route("/reminder_ics")
 def reminder_ics():
     risk_label = session.get("last_risk_label") or request.args.get("risk", "Низкий риск")
