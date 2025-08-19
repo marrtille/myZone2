@@ -26,6 +26,41 @@
     <a class="navbar-login" href="#">Войти</a>
   </div>
 
+  <main class="container" style="max-width:900px;margin:2rem auto;padding:1rem;">
+    <h1>Ультразвуковое исследование (УЗИ) молочных желез</h1>
+    <p>УЗИ — безопасный метод визуализации, который помогает выявлять узлы, кисты и другие изменения на ранних стадиях.</p>
+
+    <h2>Когда делать УЗИ?</h2>
+    <ul>
+      <li>Есть жалобы: уплотнение, боль, выделения, изменения кожи/соска.</li>
+      <li>Профилактически раз в 12–24 месяца (зависит от возраста и риска).</li>
+      <li>По рекомендации врача при повышенном риске.</li>
+    </ul>
+
+    <h2>Подготовка</h2>
+    <ul>
+      <li>Специальной подготовки не требуется.</li>
+      <li>Возьмите предыдущие заключения/снимки, если они есть.</li>
+    </ul>
+
+    <p style="margin-top:1rem">
+      <a class="cta-button" href="/risk_form">Оценить риск</a>
+      <a class="cta-button" href="/diary" style="margin-left:0.5rem;">Дневник симптомов</a>
+    </p>
+  </main>
+
+  <script>
+    function changeLang(select) {
+      const lang = select.value;
+      const currentPath = window.location.pathname;
+      const cleanPath = currentPath.replace(/^\/(ru|kz|en)/, '');
+      window.location.href = `/${lang}${cleanPath}`;
+    }
+  </script>
+</body>
+</html>
+
+
 <main class="container">
   <h1>Ультразвуковое исследование</h1>
   <form method="post" style="text-align:center; margin-bottom:2em;">
@@ -60,3 +95,4 @@
 
 </body>
 </html>
+
