@@ -28,22 +28,27 @@
 
     <canvas id="usgChart" height="120" style="margin-bottom:1rem;"></canvas>
 
-    <form method="post" style="text-align:center; margin:1rem 0 2rem;">
-      <button type="submit" name="usg_result" value="tumour" class="usg-btn red">Опухоль обнаружена</button>
-      <button type="submit" name="usg_result" value="no_tumour" class="usg-btn green" style="margin-left:8px;">Опухоль не обнаружена</button>
-    </form>
+<form method="post"
+      action="{{ url_for('usg', lang=request.view_args.get('lang')) if request.view_args and request.view_args.get('lang') else url_for('usg') }}"
+      style="text-align:center; margin-bottom:2em;">
+  <button type="submit" name="usg_result" value="tumour"
+          class="usg-btn red {% if status == 'Опухоль обнаружена' %}selected{% endif %}">
+    Опухоль обнаружена
+  </button>
+  <button type="submit" name="usg_result" value="no_tumour"
+          class="usg-btn green {% if status == 'Опухоль не обнаружена' %}selected{% endif %}">
+    Опухоль не обнаружена
+  </button>
+</form>
 
-    {% if status %}
-      <div class="usg-result {% if status == 'Опухоль обнаружена' %}red-text{% else %}green-text{% endif %}" style="text-align:center;">
-        {% if status == 'Опухоль обнаружена' %}
-          <h2>🚨 {{ status }}</h2>
-          <p>{{ advice }}</p>
-        {% else %}
-          <h2>🟢 {{ status }}</h2>
-          <p>{{ advice }}</p>
-        {% endif %}
-      </div>
-    {% endif %}
+{% if status %}
+  <div class="usg-result {% if status == 'Опухоль обнаружена' %}red-text{% else %}green-text{% endif %}">
+    <div class="usg-center">
+      <h2>{{ status }}</h2>
+      <p>{{ advice }}</p>
+    </div>
+  </div>
+{% endif %}
   </main>
 
   <script>
@@ -88,3 +93,4 @@
   </script>
 </body>
 </html>
+
