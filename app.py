@@ -556,29 +556,42 @@ def export_pdf():
     return send_file(pdf_path, as_attachment=True, download_name="myzone_report.pdf")
 
 # --- USG page (with and without language prefix) ---
-@app.route("/usg")
-@app.route("/<lang>/usg")
+@app.route("/usg", methods=["GET", "POST"])
+@app.route("/<lang>/usg", methods=["GET", "POST"])
 def usg(lang=None):
-    # если есть шаблон — отрисуем его
+    status = None
+    advice = None
+
+    # Handle the two buttons
+    if request.method == "POST":
+        choice = request.form.get("usg_result")
+        if choice == "tumour":
+            status = "Опухоль обнаружена"
+            advice = (
+                "⚠️ Обратитесь к врачу как можно скорее для дальнейшего обследования. "
+                "Сохраните результаты, при необходимости запишитесь на консультацию."
+            )
+        elif choice == "no_tumour":
+            status = "Опухоль не обнаружена"
+            advice = (
+                "✅ Хорошо! Сохраняйте наблюдение, рекомендовано профилактическое УЗИ "
+                "по плану. При появлении симптомов — обратитесь к врачу."
+            )
+
+    # Render template (with context if POST)
     if os.path.exists(os.path.join(TEMPLATES_DIR, "usg.html")):
-        return render_template("usg.html")
-    # иначе вернём простой fallback-HTML
-    return """
-    <h1>Ультразвуковое исследование (УЗИ)</h1>
-    <p>УЗИ молочных желез — безопасный и безболезненный метод раннего выявления изменений.</p>
-    <h3>Когда проходить УЗИ?</h3>
-    <ul>
-      <li>При жалобах (уплотнение, боль, выделения, изменения кожи/соска)</li>
-      <li>Профилактически: 1 раз в 12–24 месяца (по возрасту и риску)</li>
-      <li>По рекомендации врача при повышенном риске</li>
-    </ul>
-    <h3>Как подготовиться?</h3>
-    <ul>
-      <li>Специальной подготовки не требуется</li>
-      <li>Возьмите с собой предыдущие заключения или снимки</li>
-    </ul>
-    <p><a href="/risk_form">Вернуться к оценке риска</a></p>
+        return render_template("usg.html", status=status, advice=advice)
+
+    # Fallback page if template missing
+    return f"""
+    <h1>Ультразвуковое исследование</h1>
+    <form method="post" style="text-align:center; margin-bottom:2em;">
+      <button type="submit" name="usg_result" value="tumour">Опухоль обнаружена</button>
+      <button type="submit" name="usg_result" value="no_tumour">Опухоль не обнаружена</button>
+    </form>
+    {f"<h2>{status}</h2><p>{advice}</p>" if status else ""}
     """
+
 
 @app.route("/reminder_ics")
 def reminder_ics():
