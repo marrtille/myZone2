@@ -1,6 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session
 import os, uuid, sqlite3
 from datetime import datetime, timedelta
+import json, threading, time
+from collections import deque
+from flask import Response, jsonify
+from flask_cors import CORS
+import serial, os
 
 import numpy as np
 import pandas as pd
@@ -9,6 +14,62 @@ import joblib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+CORS(app)  # ok to keep on for local dev
+
+SERIAL_PORT = os.environ.get("SERIAL_PORT", "COM5")  # CHANGE if needed
+BAUD = 115200
+
+latest = {}                 # last reading (dict)
+ring = deque(maxlen=5000)   # recent readings
+stop_flag = False
+
+def _serial_reader():
+    global latest
+    while not stop_flag:
+        try:
+            with serial.Serial(SERIAL_PORT, BAUD, timeout=1) as ser:
+                buf = ""
+                while not stop_flag:
+                    chunk = ser.read(ser.in_waiting or 1).decode('utf-8', errors='ignore')
+                    if not chunk:
+                        continue
+                    buf += chunk
+                    while '\n' in buf:
+                        line, buf = buf.split('\n', 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            j = json.loads(line)
+                            latest = j
+                            ring.append(j)
+                        except Exception:
+                            pass  # ignore non-JSON
+        except Exception:
+            time.sleep(1)  # retry if cable unplugged/port busy
+
+threading.Thread(target=_serial_reader, daemon=True).start()
+
+@app.route("/api/latest")
+def api_latest():
+    return jsonify(latest or {})
+
+@app.route("/api/history")
+def api_history():
+    return jsonify(list(ring))
+
+@app.route("/api/stream")
+def api_stream():
+    def gen():
+        last_ts = None
+        while True:
+            if latest and latest.get("ts") != last_ts:
+                last_ts = latest.get("ts")
+                yield f"data: {json.dumps(latest)}\n\n"
+            time.sleep(0.05)
+    return Response(gen(), mimetype="text/event-stream")
+
 
 # SHAP is optional but preferred
 try:
@@ -444,4 +505,8 @@ def reminder_ics():
 
 # ---------- Run ----------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    try:
+        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    finally:
+        stop_flag = True
+
