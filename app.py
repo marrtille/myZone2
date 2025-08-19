@@ -223,6 +223,13 @@ def risk_form():
             self_exam_url=url_for("self_exam"),
         )
 
+        except Exception as e:
+           import traceback
+           err = traceback.format_exc()
+           print("risk_form ERROR:\n", err)
+           return f"<h2>Ошибка обработки формы</h2><pre>{err}</pre>", 500
+
+
 @app.route("/self_exam")
 def self_exam():
     if os.path.exists(os.path.join(TEMPLATES_DIR, "self_exam.html")):
