@@ -8,10 +8,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 try:
     import shap
     SHAP_AVAILABLE = True
@@ -23,9 +19,9 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(APP_DIR, "static")
 TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
 DB_PATH = os.path.join(APP_DIR, "diary.db")
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 app = Flask(__name__)
@@ -75,151 +71,162 @@ def index():
     <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a></p>
     """
 
-@app.route("/risk_form", methods=["GET","POST"])
+@app.route("/risk_form", methods=["GET", "POST"])
 def risk_form():
     if request.method == "GET":
-        return render_template("risk_form.html") if os.path.exists(os.path.join(TEMPLATES_DIR,"risk_form.html")) else """
-        <form method="post">
-          age <input name="age" type="number" value="40"><br>
-          sex (0=female,1=male) <input name="sex" type="number" value="0"><br>
-          bmi <input name="bmi" type="number" value="25" step="0.1"><br>
-          family_history (0/1) <input name="family_history" type="number" value="0"><br>
-          smoking (0/1) <input name="smoking" type="number" value="0"><br>
-          alcohol (0/1) <input name="alcohol" type="number" value="0"><br>
-          early_periods (0/1) <input name="early_periods" type="number" value="0"><br>
-          late_menopause (0/1) <input name="late_menopause" type="number" value="0"><br>
-          ovarian_history (0/1) <input name="ovarian_history" type="number" value="0"><br>
-          low_activity (0/1) <input name="low_activity" type="number" value="0"><br>
-          hormone_therapy (0/1) <input name="hormone_therapy" type="number" value="0"><br>
-          brca_mutation (0/1) <input name="brca_mutation" type="number" value="0"><br>
-          never_pregnant_40 (0/1) <input name="never_pregnant_40" type="number" value="0"><br>
-          <button type="submit">Predict</button>
-        </form>
-        """
+        return render_template("risk_form.html")
 
-    f = request.form
-    def geti(n, default=0):
-        try: return int(f.get(n, default))
-        except: return int(float(f.get(n, default)))
-    def getf(n, default=0.0):
-        try: return float(f.get(n, default))
-        except: return 0.0
-
-    X = pd.DataFrame([{
-        "age": geti("age"), "sex": geti("sex"), "bmi": getf("bmi"),
-        "family_history": geti("family_history"), "smoking": geti("smoking"),
-        "alcohol": geti("alcohol"), "early_periods": geti("early_periods"),
-        "late_menopause": geti("late_menopause"), "ovarian_cancer_history": geti("ovarian_history"),
-        "low_activity": geti("low_activity"), "hormone_therapy": geti("hormone_therapy"),
-        "brca_mutation": geti("brca_mutation"), "no_pregnancy_over_40": geti("never_pregnant_40"),
-    }])
-
-    # robust risk mapping
-    risk_label = "Средний риск"
     try:
-        proba = model.predict_proba(X)
-        if proba.shape[1] == 3:
-            cls = int(np.argmax(proba[0]))
-            risk_label = ["Низкий риск","Средний риск","Высокий риск"][cls]
-        else:
-            p1 = float(proba[0,1])
-            if p1 < 0.33: risk_label = "Низкий риск"
-            elif p1 < 0.66: risk_label = "Средний риск"
-            else: risk_label = "Высокий риск"
-    except Exception:
-        pred = int(model.predict(X)[0])
-        risk_label = {0:"Низкий риск",1:"Средний риск",2:"Высокий риск"}.get(pred,"Средний риск")
+        f = request.form
 
-  # --- explainability (safe & 1-D)
-feature_names = list(X.columns)
-contrib = None
+        def geti(name, default=0):
+            v = f.get(name, default)
+            try:
+                return int(v)
+            except Exception:
+                try:
+                    return int(float(v))
+                except Exception:
+                    return int(default)
 
-if SHAP_AVAILABLE:
-    try:
-        explainer = shap.Explainer(model, X)
-        sv = explainer(X)  # sv.values could be (1, n_features) or (1, n_features, n_classes)
-        raw = getattr(sv, "values", None)
-        if raw is not None:
-            arr = np.asarray(raw)
-            # take instance 0 if present
-            if arr.ndim >= 2 and arr.shape[0] == 1:
-                arr = arr[0]
-            # reduce to 1-D (n_features)
-            if arr.ndim >= 2:
-                # common: (n_features, n_classes) -> mean across classes
-                arr = arr.mean(axis=-1)
-            contrib = arr
-    except Exception:
+        def getf(name, default=0.0):
+            v = f.get(name, default)
+            try:
+                return float(v)
+            except Exception:
+                return float(default)
+
+        X = pd.DataFrame([{
+            "age": geti("age"),
+            "sex": geti("sex"),
+            "bmi": getf("bmi"),
+            "family_history": geti("family_history"),
+            "smoking": geti("smoking"),
+            "alcohol": geti("alcohol"),
+            "early_periods": geti("early_periods"),
+            "late_menopause": geti("late_menopause"),
+            "ovarian_cancer_history": geti("ovarian_history"),
+            "low_activity": geti("low_activity"),
+            "hormone_therapy": geti("hormone_therapy"),
+            "brca_mutation": geti("brca_mutation"),
+            "no_pregnancy_over_40": geti("never_pregnant_40"),
+        }])
+
+        # ---------- Risk label (predict_proba if available)
+        try:
+            proba = model.predict_proba(X)
+            if proba.shape[1] >= 3:
+                cls = int(np.argmax(proba[0]))
+                risk_label = ["Низкий риск", "Средний риск", "Высокий риск"][cls]
+            else:
+                p1 = float(proba[0, 1])
+                risk_label = "Низкий риск" if p1 < 0.33 else ("Средний риск" if p1 < 0.66 else "Высокий риск")
+        except Exception:
+            pred = int(model.predict(X)[0])
+            risk_label = {0: "Низкий риск", 1: "Средний риск", 2: "Высокий риск"}.get(pred, "Средний риск")
+
+        # ---------- Explainability: force 1-D contrib vector
+        feature_names = list(X.columns)
         contrib = None
+        try:
+            # SHAP path (if available)
+            if 'shap' in globals():
+                explainer = shap.Explainer(model, X)
+                sv = explainer(X)  # sv.values shapes vary
+                raw = getattr(sv, "values", None)
+                if raw is not None:
+                    arr = np.asarray(raw)
+                    arr = np.squeeze(arr)                 # drop singleton dims
+                    if arr.ndim == 2:                     # (n_features, n_classes)
+                        arr = arr.mean(axis=1)
+                    elif arr.ndim == 0:                   # scalar -> 1 len
+                        arr = np.array([float(arr)])
+                    contrib = arr
+        except Exception:
+            contrib = None
 
-if contrib is None:
-    fi = getattr(model, "feature_importances_", None)
-    if fi is not None:
-        contrib = np.asarray(fi, dtype=float)
-    else:
-        contrib = np.zeros(len(feature_names), dtype=float)
+        if contrib is None:
+            fi = getattr(model, "feature_importances_", None)
+            contrib = np.array(fi, dtype=float) if fi is not None else np.zeros(len(feature_names), dtype=float)
 
-# Final safety: ensure 1-D length == n_features
-contrib = np.asarray(contrib, dtype=float)
-if contrib.ndim >= 2:
-    contrib = contrib.mean(axis=-1)
-contrib = contrib.reshape(-1)
-if contrib.shape[0] != len(feature_names):
-    contrib = np.resize(contrib, (len(feature_names),))
+        contrib = np.asarray(contrib, dtype=float).reshape(-1)
+        if contrib.shape[0] != len(feature_names):
+            contrib = np.resize(contrib, (len(feature_names),))
 
-order = np.argsort(np.abs(contrib))[::-1]
+        order = np.argsort(np.abs(contrib))[::-1]
 
-MODIFIABLE = {"smoking","alcohol","low_activity","bmi","hormone_therapy"}
-HUMAN_NAMES = {
-    "smoking":"курение","alcohol":"регулярный алкоголь","low_activity":"низкая физическая активность",
-    "bmi":"повышенный индекс массы тела (BMI)","hormone_therapy":"гормональная терапия",
-    "family_history":"семейная история рака груди","early_periods":"раннее начало менструаций",
-    "late_menopause":"поздняя менопауза","ovarian_cancer_history":"личная/семейная история рака яичников",
-    "brca_mutation":"мутация BRCA","no_pregnancy_over_40":"отсутствие беременности до 40",
-    "age":"возраст","sex":"пол",
-}
+        MODIFIABLE = {"smoking", "alcohol", "low_activity", "bmi", "hormone_therapy"}
+        HUMAN_NAMES = {
+            "smoking": "курение",
+            "alcohol": "регулярный алкоголь",
+            "low_activity": "низкая физическая активность",
+            "bmi": "повышенный индекс массы тела (BMI)",
+            "hormone_therapy": "гормональная терапия",
+            "family_history": "семейная история рака груди",
+            "early_periods": "раннее начало менструаций",
+            "late_menopause": "поздняя менопауза",
+            "ovarian_cancer_history": "личная/семейная история рака яичников",
+            "brca_mutation": "мутация BRCA",
+            "no_pregnancy_over_40": "отсутствие беременности до 40",
+            "age": "возраст",
+            "sex": "пол",
+        }
 
-top3 = []
-for idx in order[:3]:
-    idx = int(idx)  # ensure scalar
-    name = feature_names[idx]
-    human = HUMAN_NAMES.get(name, name)
-    mod = " (можно изменить)" if name in MODIFIABLE else " (неизменяемый фактор)"
-    top3.append(f"• {human}{mod}")
-shap_reason = "Этот балл повышается из-за:\n" + "\n".join(top3) if top3 else None
+        reasons = []
+        for idx in order[:3]:
+            i = int(idx)
+            name = feature_names[i]
+            human = HUMAN_NAMES.get(name, name)
+            tag = " (можно изменить)" if name in MODIFIABLE else " (неизменяемый фактор)"
+            reasons.append(f"• {human}{tag}")
+        shap_reason = "Этот балл повышается из-за:\n" + "\n".join(reasons)
 
-
-
-    try:
-        top_k = min(8, len(feature_names))
-        sel = order[:top_k]
-        plt.figure(figsize=(5, 3.5), dpi=160)
-        plt.barh([feature_names[i] for i in sel][::-1], np.abs(contrib[sel])[::-1])
-        plt.xlabel("вклад признака (чем больше — тем важнее)")
-        plt.tight_layout()
-        feat_img = os.path.join(STATIC_DIR, "feature_importance.png")
-        plt.savefig(feat_img, bbox_inches="tight"); plt.close()
-        shap_img_url = url_for("static", filename="feature_importance.png")
-    except Exception:
+        # ---------- Bar chart (simple & robust)
         shap_img_url = None
+        try:
+            top_k = min(8, len(feature_names))
+            sel = np.array(order[:top_k], dtype=int)
+            labels = [feature_names[i] for i in sel][::-1]
+            vals = np.abs(contrib[sel])[::-1]
+            plt.figure(figsize=(6, 3.5), dpi=160)
+            plt.barh(labels, vals)
+            plt.xlabel("вклад признака (чем больше — тем важнее)")
+            plt.tight_layout()
+            out = os.path.join(STATIC_DIR, "feature_importance.png")
+            plt.savefig(out, bbox_inches="tight")
+            plt.close()
+            shap_img_url = url_for("static", filename="feature_importance.png")
+        except Exception:
+            shap_img_url = None
 
-    session["last_input"] = X.to_dict(orient="records")[0]
-    session["last_risk_label"] = risk_label
-    session["last_shap_top"] = top3
+        # ---------- Save for PDF/ICS
+        session["last_input"] = X.to_dict(orient="records")[0]
+        session["last_risk_label"] = risk_label
+        session["last_shap_top"] = reasons
 
-    return render_template(
-        "result.html",
-        title=risk_label,
-        advice=("🔴 Срочно обратитесь к врачу." if "Высокий" in risk_label
-                else "🟡 Рекомендуем проконсультироваться." if "Средний" in risk_label
-                else "🟢 Риск низкий. Продолжайте профилактику."),
-        shap_reason=shap_reason,
-        shap_img_url=shap_img_url,
-        export_pdf_url=url_for("export_pdf"),
-        reminder_ics_url=url_for("reminder_ics"),
-        diary_url=url_for("diary"),
-        self_exam_url=url_for("self_exam"),
-    )
+        advice = (
+            "🔴 Срочно обратитесь к врачу." if "Высокий" in risk_label
+            else "🟡 Рекомендуем консультацию у врача." if "Средний" in risk_label
+            else "🟢 Риск низкий. Продолжайте профилактику."
+        )
+
+        return render_template(
+            "result.html",
+            title=risk_label,
+            advice=advice,
+            shap_reason=shap_reason,
+            shap_img_url=shap_img_url,
+            export_pdf_url=url_for("export_pdf"),
+            reminder_ics_url=url_for("reminder_ics"),
+            diary_url=url_for("diary"),
+            self_exam_url=url_for("self_exam"),
+        )
+
+    except Exception as e:
+        # Show the real error in the browser and logs so you’re never blind
+        err = traceback.format_exc()
+        print("risk_form ERROR:\n", err)
+        return f"<h2>Ошибка обработки формы</h2><pre>{err}</pre>", 500
 
 @app.route("/self_exam")
 def self_exam():
@@ -334,6 +341,7 @@ END:VCALENDAR
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 PY
+
 
 
 
