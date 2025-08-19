@@ -1,29 +1,33 @@
 from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session
 import os, uuid, sqlite3
+from datetime import datetime, timedelta
+
 import numpy as np
 import pandas as pd
-import shap
 import joblib
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 
+# SHAP is optional but preferred
 try:
     import shap
     SHAP_AVAILABLE = True
 except Exception:
     SHAP_AVAILABLE = False
 
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 
+# ---------- Paths & App ----------
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
 DB_PATH = os.path.join(APP_DIR, "diary.db")
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+STATIC_DIR = os.path.join(APP_DIR, "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 app = Flask(__name__)
@@ -32,6 +36,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 MODEL_PATH = os.path.join(APP_DIR, "breast_risk_model.pkl")
 model = joblib.load(MODEL_PATH)
 
+# ---------- Helpers ----------
 def get_or_create_user_id():
     if "user_id" not in session:
         session["user_id"] = str(uuid.uuid4())
@@ -53,34 +58,149 @@ def init_db():
             notes TEXT
         )
     """)
-    con.commit(); con.close()
+    con.commit()
+    con.close()
 init_db()
 
+# Modifiable factors & friendly names
 MODIFIABLE = {"smoking","alcohol","low_activity","bmi","hormone_therapy"}
 HUMAN_NAMES = {
-    "smoking":"курение","alcohol":"регулярный алкоголь","low_activity":"низкая физическая активность",
-    "bmi":"повышенный индекс массы тела (BMI)","hormone_therapy":"гормональная терапия",
-    "family_history":"семейная история рака груди","early_periods":"раннее начало менструаций",
-    "late_menopause":"поздняя менопауза","ovarian_cancer_history":"личная/семейная история рака яичников",
-    "brca_mutation":"мутация BRCA","no_pregnancy_over_40":"отсутствие беременности до 40",
-    "age":"возраст","sex":"пол",
+    "age":"возраст",
+    "sex":"пол",
+    "bmi":"повышенный индекс массы тела (BMI)",
+    "family_history":"семейная история рака груди",
+    "early_periods":"раннее начало менструаций",
+    "late_menopause":"поздняя менопауза",
+    "ovarian_cancer_history":"личная/семейная история рака яичников",
+    "low_activity":"низкая физическая активность",
+    "hormone_therapy":"гормональная терапия",
+    "brca_mutation":"мутация BRCA",
+    "no_pregnancy_over_40":"отсутствие беременности до 40",
+    "smoking":"курение",
+    "alcohol":"регулярный алкоголь",
 }
 
+def _geti(form, name, default=0):
+    v = form.get(name, default)
+    try:
+        return int(v)
+    except Exception:
+        try:
+            return int(float(v))
+        except Exception:
+            return int(default)
+
+def _getf(form, name, default=0.0):
+    v = form.get(name, default)
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+def collect_input(f):
+    """Parse incoming form into a single-row DataFrame with the model's features."""
+    X = pd.DataFrame([{
+        "age": _geti(f, "age"),
+        "sex": _geti(f, "sex"),
+        "bmi": _getf(f, "bmi"),
+        "family_history": _geti(f, "family_history"),
+        "smoking": _geti(f, "smoking"),
+        "alcohol": _geti(f, "alcohol"),
+        "early_periods": _geti(f, "early_periods"),
+        "late_menopause": _geti(f, "late_menopause"),
+        # form field is ovarian_history, model feature is ovarian_cancer_history
+        "ovarian_cancer_history": _geti(f, "ovarian_history"),
+        "low_activity": _geti(f, "low_activity"),
+        "hormone_therapy": _geti(f, "hormone_therapy"),
+        "brca_mutation": _geti(f, "brca_mutation"),
+        # form field is never_pregnant_40, model feature is no_pregnancy_over_40
+        "no_pregnancy_over_40": _geti(f, "never_pregnant_40"),
+    }])
+    return X
+
+def _risk_label_from_proba(proba):
+    """Turn predict_proba output into RU label."""
+    if proba.shape[1] >= 3:
+        cls = int(np.argmax(proba[0]))
+        return ["Низкий риск","Средний риск","Высокий риск"][cls]
+    else:
+        p1 = float(proba[0,1])
+        return "Низкий риск" if p1 < 0.33 else ("Средний риск" if p1 < 0.66 else "Высокий риск")
+
+def _safe_shap_contrib(model, X, feature_names):
+    """Return 1-D signed contributions aligned to feature_names."""
+    contrib = None
+    if SHAP_AVAILABLE:
+        try:
+            explainer = shap.Explainer(model, X)
+            sv = explainer(X)
+            raw = getattr(sv, "values", None)
+            if raw is not None:
+                arr = np.asarray(raw)
+                # take the first sample only
+                if arr.ndim >= 1:
+                    arr = arr[0]
+                # if (n_features, n_classes), average across classes
+                if arr.ndim == 2:
+                    arr = arr.mean(axis=1)
+                # ensure 1-D
+                arr = np.squeeze(arr)
+                if arr.ndim == 0:
+                    arr = np.array([float(arr)], dtype=float)
+                contrib = np.asarray(arr, dtype=float)
+        except Exception:
+            contrib = None
+
+    if contrib is None:
+        fi = getattr(model, "feature_importances_", None)
+        if fi is not None:
+            contrib = np.asarray(fi, dtype=float)
+        else:
+            contrib = np.zeros(len(feature_names), dtype=float)
+
+    # shape guard
+    contrib = np.asarray(contrib, dtype=float).reshape(-1)
+    if contrib.shape[0] != len(feature_names):
+        contrib = np.resize(contrib, (len(feature_names),))
+    return contrib
+
+def model_predict(X: pd.DataFrame):
+    """Predict risk and compute signed contributions."""
+    # risk label
+    try:
+        proba = model.predict_proba(X)
+        risk_label = _risk_label_from_proba(proba)
+    except Exception:
+        pred = int(model.predict(X)[0])
+        risk_label = {0:"Низкий риск",1:"Средний риск",2:"Высокий риск"}.get(pred, "Средний риск")
+
+    feature_names = list(X.columns)
+    contrib = _safe_shap_contrib(model, X, feature_names)
+    order = np.argsort(np.abs(contrib))[::-1]
+    return contrib, risk_label, order, feature_names
+
+# ---------- Routes ----------
 @app.route("/")
 def index():
-    return render_template("index.html") if os.path.exists(os.path.join(TEMPLATES_DIR,"index.html")) else """
+    # fallback html if no template
+    if os.path.exists(os.path.join(TEMPLATES_DIR, "index.html")):
+        return render_template("index.html")
+    return """
     <h1>myZone</h1>
     <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a></p>
     """
 
-@app.route("/risk_form", methods=["POST"])
+@app.route("/risk_form", methods=["GET", "POST"])
 def risk_form():
+    if request.method == "GET":
+        return render_template("risk_form.html")
+
+    # POST
     try:
-        # ---------- Gather inputs
         X = collect_input(request.form)
         contrib, risk_label, order, feature_names = model_predict(X)
 
-        # ---------- Top reasons
+        # Top modifiable/non-modifiable reasons (signed logic is in the plot)
         reasons = []
         for idx in order[:3]:
             i = int(idx)
@@ -90,7 +210,7 @@ def risk_form():
             reasons.append(f"• {human}{tag}")
         shap_reason = "Этот балл повышается из-за:\n" + "\n".join(reasons)
 
-        # ---------- Bar chart
+        # Signed bar chart centered at 0 (red = ↑ risk, blue = ↓ risk)
         shap_img_url = None
         try:
             top_k = min(8, len(feature_names))
@@ -104,7 +224,6 @@ def risk_form():
             plt.axvline(0, linewidth=1, color="#444")
             plt.xlabel("вклад признака (− снижает, + повышает)")
             plt.tight_layout()
-
             out = os.path.join(STATIC_DIR, "feature_importance.png")
             plt.savefig(out, bbox_inches="tight")
             plt.close()
@@ -112,7 +231,7 @@ def risk_form():
         except Exception:
             shap_img_url = None
 
-        # ---------- Save for PDF/ICS
+        # Save to session for PDF/ICS
         session["last_input"] = X.to_dict(orient="records")[0]
         session["last_risk_label"] = risk_label
         session["last_shap_top"] = reasons
@@ -132,24 +251,21 @@ def risk_form():
             diary_url=url_for("diary"),
             self_exam_url=url_for("self_exam"),
         )
-
     except Exception as e:
         import traceback
         err = traceback.format_exc()
         print("risk_form ERROR:\n", err)
         return f"<h2>Ошибка обработки формы</h2><pre>{err}</pre>", 500
 
-
 @app.route("/self_exam")
 def self_exam():
     if os.path.exists(os.path.join(TEMPLATES_DIR, "self_exam.html")):
         return render_template("self_exam.html")
-    else:
-        return """
-        <h2>Самообследование</h2>
-        <img src="/static/laying.png" alt="Положение лёжа">
-        <p>Лёжа, рука за головой. Круговыми движениями прощупайте грудь по квадрантам.</p>
-        """
+    return """
+    <h2>Самообследование</h2>
+    <img src="/static/laying.png" alt="Положение лёжа">
+    <p>Лёжа, рука за головой. Круговыми движениями прощупайте грудь по квадрантам.</p>
+    """
 
 @app.route("/diary", methods=["GET","POST"])
 def diary():
@@ -166,8 +282,8 @@ def diary():
         con = sqlite3.connect(DB_PATH); cur = con.cursor()
         cur.execute("""INSERT INTO entries(user_id, created_at, breast_side, area, pain, lump, discharge, notes)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (uid, datetime.utcnow().isoformat(), data["breast_side"], data["area"],
-             data["pain"], data["lump"], data["discharge"], data["notes"]))
+                    (uid, datetime.utcnow().isoformat(), data["breast_side"], data["area"],
+                     data["pain"], data["lump"], data["discharge"], data["notes"]))
         con.commit(); con.close()
         return redirect(url_for("diary"))
 
@@ -200,15 +316,13 @@ def export_pdf():
 
     # Register Unicode font if available
     font_path = os.path.join(STATIC_DIR, "fonts", "DejaVuSans.ttf")
-    use_font = os.path.exists(font_path)
-    if use_font:
+    base_font = "Helvetica"
+    if os.path.exists(font_path):
         try:
-            pdfmetrics.registerFont(TTFont("DZV", font_path))
-            base_font = "DZV"
+            pdfmetrics.registerFont(TTFont("MYZONE_UNI", font_path))
+            base_font = "MYZONE_UNI"
         except Exception:
             base_font = "Helvetica"
-    else:
-        base_font = "Helvetica"
 
     c = canvas.Canvas(pdf_path, pagesize=A4)
     W, H = A4
@@ -228,8 +342,7 @@ def export_pdf():
 
     c.setFont(base_font, 10)
     for k, v in inputs.items():
-        line = f"{k}: {v}"
-        c.drawString(2.2 * cm, y, line)
+        c.drawString(2.2 * cm, y, f"{k}: {v}")
         y -= 0.48 * cm
         if y < 3 * cm:
             c.showPage()
@@ -239,7 +352,6 @@ def export_pdf():
     feat_img = os.path.join(STATIC_DIR, "feature_importance.png")
     if os.path.exists(feat_img):
         c.showPage()
-        # keep aspect ratio
         img_w = W - 4 * cm
         c.drawImage(feat_img, 2 * cm, H/2 - 2 * cm, width=img_w, preserveAspectRatio=True, mask='auto')
 
@@ -261,20 +373,18 @@ def export_pdf():
 
 @app.route("/reminder_ics")
 def reminder_ics():
-    # be resilient even if no session values yet
     risk_label = session.get("last_risk_label") or request.args.get("risk", "Низкий риск")
 
     if "Высокий" in risk_label:
-        title, days = "myZone: запишитесь к врачу", 3
+        days = 3
     elif "Средний" in risk_label:
-        title, days = "myZone: консультация у врача", 7
+        days = 7
     else:
-        title, days = "myZone: повторная самооценка", 60
+        days = 60
 
-    from datetime import datetime, timedelta
     start = (datetime.utcnow() + timedelta(days=days)).strftime("%Y%m%dT%H%M%SZ")
 
-    # ICS requires CRLF line endings; keep text very ASCII-friendly
+    # ICS requires CRLF line endings
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -295,5 +405,6 @@ def reminder_ics():
     resp.headers["Content-Disposition"] = "attachment; filename=myzone_reminder.ics"
     return resp
 
+# ---------- Run ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
