@@ -8,5 +8,9 @@ reportlab>=4.2.0
 joblib>=1.4.0
 shap>=0.45.0
 matplotlib>=3.9.0
+
 reportlab>=4.2.0
 scikit-learn==1.5.2
+
+pyserial>=3.5
+flask-cors>=4.0.0
