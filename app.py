@@ -1,11 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, session, Response, jsonify
 import os, uuid, sqlite3
 from datetime import datetime, timedelta
 import json, threading, time
 from collections import deque
-from flask import Response, jsonify
+
 from flask_cors import CORS
-import serial, os
 
 import numpy as np
 import pandas as pd
@@ -15,16 +14,59 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+# =========================
+# Flask app (must exist before CORS)
+# =========================
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 CORS(app)  # ok to keep on for local dev
 
-SERIAL_PORT = os.environ.get("SERIAL_PORT", "COM5")  # CHANGE if needed
-BAUD = 115200
+# =========================
+# SHAP (optional but preferred)
+# =========================
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except Exception:
+    SHAP_AVAILABLE = False
 
-latest = {}                 # last reading (dict)
-ring = deque(maxlen=5000)   # recent readings
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import cm
+
+# =========================
+# Paths & Model
+# =========================
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
+DB_PATH = os.path.join(APP_DIR, "diary.db")
+STATIC_DIR = os.path.join(APP_DIR, "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+MODEL_PATH = os.path.join(APP_DIR, "breast_risk_model.pkl")
+model = joblib.load(MODEL_PATH)
+
+# =========================
+# Serial bridge (optional; works locally, degrades on Render)
+# =========================
+SERIAL_PORT = os.environ.get("SERIAL_PORT")  # set locally (e.g., COM5 or /dev/ttyACM0). Leave unset on Render.
+BAUD = int(os.environ.get("SERIAL_BAUD", "115200"))
+
+latest = {}               # last reading (dict)
+ring = deque(maxlen=5000) # recent readings
 stop_flag = False
 
+# Try importing pyserial; it's present locally, may be absent in cloud
+try:
+    import serial  # type: ignore
+    HAVE_SERIAL = True
+except Exception:
+    HAVE_SERIAL = False
+
 def _serial_reader():
+    """Read JSON lines from Arduino and update latest/ring."""
     global latest
     while not stop_flag:
         try:
@@ -45,11 +87,15 @@ def _serial_reader():
                             latest = j
                             ring.append(j)
                         except Exception:
-                            pass  # ignore non-JSON
+                            # ignore non-JSON line
+                            pass
         except Exception:
-            time.sleep(1)  # retry if cable unplugged/port busy
+            # Port unavailable: retry after a short delay (e.g., not plugged in)
+            time.sleep(1)
 
-threading.Thread(target=_serial_reader, daemon=True).start()
+# Start reader only if we have both pyserial and a configured port
+if HAVE_SERIAL and SERIAL_PORT:
+    threading.Thread(target=_serial_reader, daemon=True).start()
 
 @app.route("/api/latest")
 def api_latest():
@@ -64,40 +110,21 @@ def api_stream():
     def gen():
         last_ts = None
         while True:
+            # If serial is unavailable (e.g., Render), stream a heartbeat so the page still works
+            if not (HAVE_SERIAL and SERIAL_PORT):
+                yield f"data: {json.dumps({'piezo_mV':0,'drop_pct':0,'objC':0,'ambC':0,'ts':int(time.time()*1000)})}\n\n"
+                time.sleep(0.5)
+                continue
+
             if latest and latest.get("ts") != last_ts:
                 last_ts = latest.get("ts")
                 yield f"data: {json.dumps(latest)}\n\n"
             time.sleep(0.05)
     return Response(gen(), mimetype="text/event-stream")
 
-
-# SHAP is optional but preferred
-try:
-    import shap
-    SHAP_AVAILABLE = True
-except Exception:
-    SHAP_AVAILABLE = False
-
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import cm
-
-# ---------- Paths & App ----------
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
-DB_PATH = os.path.join(APP_DIR, "diary.db")
-STATIC_DIR = os.path.join(APP_DIR, "static")
-os.makedirs(STATIC_DIR, exist_ok=True)
-
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-
-MODEL_PATH = os.path.join(APP_DIR, "breast_risk_model.pkl")
-model = joblib.load(MODEL_PATH)
-
-# ---------- Helpers ----------
+# =========================
+# DB init
+# =========================
 def get_or_create_user_id():
     if "user_id" not in session:
         session["user_id"] = str(uuid.uuid4())
@@ -121,9 +148,12 @@ def init_db():
     """)
     con.commit()
     con.close()
+
 init_db()
 
-# Modifiable factors & friendly names
+# =========================
+# Risk form helpers
+# =========================
 MODIFIABLE = {"smoking","alcohol","low_activity","bmi","hormone_therapy"}
 HUMAN_NAMES = {
     "age":"возраст",
@@ -201,11 +231,9 @@ def _bg_for_kernel(feature_names: list[str]) -> pd.DataFrame:
         "hormone_therapy": 0, "brca_mutation": 0,
         "no_pregnancy_over_40": 0,
     }
-    # keep only keys the model actually expects
     base = {k: v for k, v in base.items() if k in feature_names}
     rows = [base.copy()]
 
-    # a few variations to create contrast
     if "age" in feature_names:   rows += [{**base, "age": v} for v in (30, 55, 65)]
     if "bmi" in feature_names:   rows += [{**base, "bmi": v} for v in (22.0, 30.0)]
     for b in ("family_history","smoking","alcohol","low_activity",
@@ -225,38 +253,32 @@ def _safe_shap_contrib(model, X: pd.DataFrame, feature_names: list[str]) -> np.n
     contrib = None
     if SHAP_AVAILABLE:
         try:
-            # Heuristic: tree-like models expose estimators_ or tree_
             is_tree = hasattr(model, "estimators_") or hasattr(model, "tree_")
             if is_tree:
-                # TreeExplainer usually returns list per class for classifiers
                 explainer = shap.TreeExplainer(model)
                 sv = explainer.shap_values(X)
-                if isinstance(sv, list):          # legacy API
+                if isinstance(sv, list):  # legacy API
                     arr = np.asarray(sv[1][0]) if len(sv) > 1 else np.asarray(sv[0][0])
-                else:                               # modern API
+                else:                      # modern API
                     vals = getattr(sv, "values", None)
                     arr = np.asarray(vals[0]) if vals is not None else np.asarray(sv)[0]
             else:
-                # Non-tree: use KernelExplainer with a real background (not the same row!)
                 bg = _bg_for_kernel(feature_names)
                 explainer = shap.KernelExplainer(model.predict_proba, bg, link="logit")
                 sv = explainer.shap_values(X, nsamples="auto")
                 arr = np.asarray(sv[1][0]) if isinstance(sv, list) else np.asarray(sv)[0]
 
             arr = np.asarray(arr, dtype=float).squeeze()
-            # If (n_features, n_classes), pick class 1 column (positive risk)
             if arr.ndim == 2:
                 arr = arr[:, 1] if arr.shape[1] > 1 else arr[:, 0]
             contrib = arr
         except Exception:
             contrib = None
 
-    # Fallback to feature_importances_ or zeros
     if contrib is None:
         fi = getattr(model, "feature_importances_", None)
         contrib = np.asarray(fi, dtype=float) if fi is not None else np.zeros(len(feature_names), dtype=float)
 
-    # Shape guard
     contrib = np.asarray(contrib, dtype=float).reshape(-1)
     if contrib.shape[0] != len(feature_names):
         contrib = np.resize(contrib, (len(feature_names),))
@@ -264,7 +286,6 @@ def _safe_shap_contrib(model, X: pd.DataFrame, feature_names: list[str]) -> np.n
 
 def model_predict(X: pd.DataFrame):
     """Predict risk and compute signed contributions."""
-    # risk label
     try:
         proba = model.predict_proba(X)
         risk_label = _risk_label_from_proba(proba)
@@ -277,15 +298,31 @@ def model_predict(X: pd.DataFrame):
     order = np.argsort(np.abs(contrib))[::-1]
     return contrib, risk_label, order, feature_names
 
-# ---------- Routes ----------
+# =========================
+# Routes
+# =========================
 @app.route("/")
 def index():
-    # fallback html if no template
     if os.path.exists(os.path.join(TEMPLATES_DIR, "index.html")):
         return render_template("index.html")
     return """
     <h1>myZone</h1>
-    <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a></p>
+    <p><a href="/risk_form">Оценка риска</a> • <a href="/diary">Дневник</a> • <a href="/self_exam">Памятка</a> • <a href="/ultrasound">Ультразвуковое исследование</a></p>
+    """
+
+@app.route("/ultrasound")
+def ultrasound():
+    # Page that subscribes to /api/stream
+    if os.path.exists(os.path.join(TEMPLATES_DIR, "ultrasound.html")):
+        return render_template("ultrasound.html", title="Ультразвуковое исследование")
+    # Fallback simple page if template missing
+    return """
+    <h1>Ультразвуковое исследование</h1>
+    <p>Подключаюсь к потоку…</p>
+    <script>
+    const es = new EventSource('/api/stream');
+    es.onmessage = (ev) => { try { const j = JSON.parse(ev.data); console.log(j); } catch(e){} };
+    </script>
     """
 
 @app.route("/risk_form", methods=["GET", "POST"])
@@ -293,12 +330,10 @@ def risk_form():
     if request.method == "GET":
         return render_template("risk_form.html")
 
-    # POST
     try:
         X = collect_input(request.form)
         contrib, risk_label, order, feature_names = model_predict(X)
 
-        # Top modifiable/non-modifiable reasons (signed logic is in the plot)
         reasons = []
         for idx in order[:3]:
             i = int(idx)
@@ -308,7 +343,6 @@ def risk_form():
             reasons.append(f"• {human}{tag}")
         shap_reason = "Этот балл повышается из-за:\n" + "\n".join(reasons)
 
-        # Signed bar chart centered at 0 (red = ↑ risk, blue = ↓ risk)
         shap_img_url = None
         try:
             top_k = min(8, len(feature_names))
@@ -329,7 +363,6 @@ def risk_form():
         except Exception:
             shap_img_url = None
 
-        # Save to session for PDF/ICS
         session["last_input"] = X.to_dict(orient="records")[0]
         session["last_risk_label"] = risk_label
         session["last_shap_top"] = reasons
@@ -503,10 +536,11 @@ def reminder_ics():
     resp.headers["Content-Disposition"] = "attachment; filename=myzone_reminder.ics"
     return resp
 
-# ---------- Run ----------
+# =========================
+# Run
+# =========================
 if __name__ == "__main__":
     try:
         app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
     finally:
         stop_flag = True
-
