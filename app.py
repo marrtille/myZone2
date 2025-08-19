@@ -7,6 +7,8 @@ import joblib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 try:
     import shap
@@ -178,22 +180,29 @@ def risk_form():
         shap_reason = "Этот балл повышается из-за:\n" + "\n".join(reasons)
 
         # ---------- Bar chart
+            
         shap_img_url = None
-        try:
-            top_k = min(8, len(feature_names))
-            sel = np.array(order[:top_k], dtype=int)
-            labels = [feature_names[i] for i in sel][::-1]
-            vals = np.abs(contrib[sel])[::-1]
-            plt.figure(figsize=(6, 3.5), dpi=160)
-            plt.barh(labels, vals)
-            plt.xlabel("вклад признака (чем больше — тем важнее)")
-            plt.tight_layout()
-            out = os.path.join(STATIC_DIR, "feature_importance.png")
-            plt.savefig(out, bbox_inches="tight")
-            plt.close()
-            shap_img_url = url_for("static", filename="feature_importance.png")
-        except Exception:
-            shap_img_url = None
+try:
+    top_k = min(8, len(feature_names))
+    sel = np.array(order[:top_k], dtype=int)
+    labels = [feature_names[i] for i in sel][::-1]
+    vals = contrib[sel][::-1]  # signed
+
+    plt.figure(figsize=(7, 4), dpi=160)
+    y = np.arange(len(labels))
+    # color by sign: positive => right/increase, negative => left/decrease
+    colors = ["tab:red" if v > 0 else "tab:blue" for v in vals]
+    plt.barh(labels, vals, color=colors)
+    plt.axvline(0, linewidth=1, color="#444")
+    plt.xlabel("вклад признака (− снижает, + повышает)")
+    plt.tight_layout()
+
+    out = os.path.join(STATIC_DIR, "feature_importance.png")
+    plt.savefig(out, bbox_inches="tight")
+    plt.close()
+    shap_img_url = url_for("static", filename="feature_importance.png")
+except Exception:
+    shap_img_url = None
 
         # ---------- Save for PDF/ICS
         session["last_input"] = X.to_dict(orient="records")[0]
@@ -277,34 +286,66 @@ def export_pdf():
         return redirect(url_for("risk_form"))
 
     pdf_path = os.path.join(STATIC_DIR, "myzone_report.pdf")
-    c = canvas.Canvas(pdf_path, pagesize=A4)
-    W,H = A4
-    y = H-2*cm
-    c.setFont("Helvetica-Bold", 16); c.drawString(2*cm, y, "myZone — Отчёт по оценке риска")
-    y -= 1.0*cm
-    c.setFont("Helvetica", 12); c.drawString(2*cm, y, f"Итоговый риск: {risk_label}")
-    y -= 0.8*cm
 
-    c.setFont("Helvetica-Bold", 12); c.drawString(2*cm, y, "Входные данные:"); y -= 0.6*cm
-    c.setFont("Helvetica", 10)
-    for k,v in inputs.items():
-        c.drawString(2.2*cm, y, f"{k}: {v}")
-        y -= 0.5*cm
-        if y < 3*cm:
-            c.showPage(); y = H-2*cm; c.setFont("Helvetica",10)
+    # Register Unicode font if available
+    font_path = os.path.join(STATIC_DIR, "fonts", "DejaVuSans.ttf")
+    use_font = os.path.exists(font_path)
+    if use_font:
+        try:
+            pdfmetrics.registerFont(TTFont("DZV", font_path))
+            base_font = "DZV"
+        except Exception:
+            base_font = "Helvetica"
+    else:
+        base_font = "Helvetica"
+
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    W, H = A4
+    y = H - 2 * cm
+
+    c.setFont(base_font, 16)
+    c.drawString(2 * cm, y, "myZone — Отчёт по оценке риска")
+    y -= 1.0 * cm
+
+    c.setFont(base_font, 12)
+    c.drawString(2 * cm, y, f"Итоговый риск: {risk_label}")
+    y -= 0.8 * cm
+
+    c.setFont(base_font, 12)
+    c.drawString(2 * cm, y, "Входные данные:")
+    y -= 0.6 * cm
+
+    c.setFont(base_font, 10)
+    for k, v in inputs.items():
+        line = f"{k}: {v}"
+        c.drawString(2.2 * cm, y, line)
+        y -= 0.48 * cm
+        if y < 3 * cm:
+            c.showPage()
+            c.setFont(base_font, 10)
+            y = H - 2 * cm
 
     feat_img = os.path.join(STATIC_DIR, "feature_importance.png")
     if os.path.exists(feat_img):
         c.showPage()
-        c.drawImage(feat_img, 2*cm, H/2-2*cm, width=W-4*cm, preserveAspectRatio=True, mask='auto')
+        # keep aspect ratio
+        img_w = W - 4 * cm
+        c.drawImage(feat_img, 2 * cm, H/2 - 2 * cm, width=img_w, preserveAspectRatio=True, mask='auto')
 
     c.showPage()
-    c.setFont("Helvetica-Bold", 12); c.drawString(2*cm, H-2*cm, "Почему такой балл:")
-    y = H-3*cm; c.setFont("Helvetica", 10)
+    c.setFont(base_font, 12)
+    c.drawString(2 * cm, H - 2 * cm, "Почему такой балл:")
+    y = H - 3 * cm
+    c.setFont(base_font, 10)
     for line in shap_top:
-        c.drawString(2.2*cm, y, line); y -= 0.5*cm
-    c.save()
+        c.drawString(2.2 * cm, y, line)
+        y -= 0.48 * cm
+        if y < 2 * cm:
+            c.showPage()
+            c.setFont(base_font, 10)
+            y = H - 2 * cm
 
+    c.save()
     return send_file(pdf_path, as_attachment=True, download_name="myzone_report.pdf")
 
 @app.route("/reminder_ics")
