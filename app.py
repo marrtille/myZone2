@@ -179,9 +179,9 @@ def risk_form():
             reasons.append(f"• {human}{tag}")
         shap_reason = "Этот балл повышается из-за:\n" + "\n".join(reasons)
 
-                # ---------- Bar chart
+        # ---------- Bar chart
         shap_img_url = None
-    try:
+        try:
             top_k = min(8, len(feature_names))
             sel = np.array(order[:top_k], dtype=int)
             labels = [feature_names[i] for i in sel][::-1]
@@ -227,7 +227,7 @@ def risk_form():
         import traceback
         err = traceback.format_exc()
         print("risk_form ERROR:\n", err)
-        return f"<h2>Ошибка обработки формы</h2><pre>{err}</pre>", 500        
+        return f"<h2>Ошибка обработки формы</h2><pre>{err}</pre>", 500
 
 @app.route("/self_exam")
 def self_exam():
