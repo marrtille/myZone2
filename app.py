@@ -179,26 +179,26 @@ def risk_form():
             reasons.append(f"• {human}{tag}")
         shap_reason = "Этот балл повышается из-за:\n" + "\n".join(reasons)
 
-        # ---------- Bar chart
+                # ---------- Bar chart
         shap_img_url = None
-        try:
-            top_k = min(8, len(feature_names))
-            sel = np.array(order[:top_k], dtype=int)
-            labels = [feature_names[i] for i in sel][::-1]
-            vals = contrib[sel][::-1]  # signed
+            try:
+                top_k = min(8, len(feature_names))
+                sel = np.array(order[:top_k], dtype=int)
+                labels = [feature_names[i] for i in sel][::-1]
+                vals = contrib[sel][::-1]  # signed
 
-            plt.figure(figsize=(7, 4), dpi=160)
-            # color by sign: positive => increase risk, negative => decrease
-            colors = ["tab:red" if v > 0 else "tab:blue" for v in vals]
-            plt.barh(labels, vals, color=colors)
-            plt.axvline(0, linewidth=1, color="#444")
-            plt.xlabel("вклад признака (− снижает, + повышает)")
-            plt.tight_layout()
+                plt.figure(figsize=(7, 4), dpi=160)
+                y = np.arange(len(labels))
+                colors = ["tab:red" if v > 0 else "tab:blue" for v in vals]
+                plt.barh(labels, vals, color=colors)
+                plt.axvline(0, linewidth=1, color="#444")
+                plt.xlabel("вклад признака (− снижает, + повышает)")
+                plt.tight_layout()
 
-            out = os.path.join(STATIC_DIR, "feature_importance.png")
-            plt.savefig(out, bbox_inches="tight")
-            plt.close()
-            shap_img_url = url_for("static", filename="feature_importance.png")
+                out = os.path.join(STATIC_DIR, "feature_importance.png")
+                plt.savefig(out, bbox_inches="tight")
+                plt.close()
+                shap_img_url = url_for("static", filename="feature_importance.png")
         except Exception:
             shap_img_url = None
 
