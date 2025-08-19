@@ -142,7 +142,7 @@ def _safe_shap_contrib(model, X, feature_names):
                     arr = arr[0]
                 # if (n_features, n_classes), average across classes
                 if arr.ndim == 2:
-                    arr = arr.mean(axis=1)
+                    arr = arr[:, 1] if arr.shape[1] > 1 else arr[:, 0]
                 # ensure 1-D
                 arr = np.squeeze(arr)
                 if arr.ndim == 0:
