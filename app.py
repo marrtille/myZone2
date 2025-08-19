@@ -223,14 +223,16 @@ def risk_form():
             self_exam_url=url_for("self_exam"),
         )
 
-
 @app.route("/self_exam")
 def self_exam():
-    return render_template("self_exam.html") if os.path.exists(os.path.join(TEMPLATES_DIR,"self_exam.html")) else """
-    <h2>Самообследование</h2>
-    <img src="/static/laying.png" alt="Положение лёжа">
-    <p>Лёжа, рука за головой. Круговыми движениями прощупайте грудь по квадрантам.</p>
-    """
+    if os.path.exists(os.path.join(TEMPLATES_DIR, "self_exam.html")):
+        return render_template("self_exam.html")
+    else:
+        return """
+        <h2>Самообследование</h2>
+        <img src="/static/laying.png" alt="Положение лёжа">
+        <p>Лёжа, рука за головой. Круговыми движениями прощупайте грудь по квадрантам.</p>
+        """
 
 @app.route("/diary", methods=["GET","POST"])
 def diary():
@@ -378,8 +380,6 @@ def reminder_ics():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-PY
-
 
 
 
