@@ -69,6 +69,48 @@
   </div>
 </section>
 
+  <section style="font-family:system-ui;max-width:860px;margin:24px auto">
+  <h2>myZone • Live Ultrasound & Temp</h2>
+  <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div style="padding:12px;border:1px solid #ddd;border-radius:12px">
+      <div style="opacity:.7">Ultrasound (mV)</div>
+      <div id="piezo" style="font-size:28px;font-weight:700">–</div>
+    </div>
+    <div style="padding:12px;border:1px solid #ddd;border-radius:12px">
+      <div style="opacity:.7">Drop % (shadow)</div>
+      <div id="drop" style="font-size:28px;font-weight:700">–</div>
+    </div>
+    <div style="padding:12px;border:1px solid #ddd;border-radius:12px">
+      <div style="opacity:.7">Object °C</div>
+      <div id="obj" style="font-size:28px;font-weight:700">–</div>
+    </div>
+    <div style="padding:12px;border:1px solid #ddd;border-radius:12px">
+      <div style="opacity:.7">Ambient °C</div>
+      <div id="amb" style="font-size:28px;font-weight:700">–</div>
+    </div>
+  </div>
+  <small style="opacity:.7">Tip: close Arduino Serial Monitor/Plotter while this page is open.</small>
+</section>
+
+<script>
+const piezo = document.getElementById('piezo');
+const drop  = document.getElementById('drop');
+const obj   = document.getElementById('obj');
+const amb   = document.getElementById('amb');
+
+const es = new EventSource("/api/stream");
+es.onmessage = (ev) => {
+  try {
+    const j = JSON.parse(ev.data);
+    if ('piezo_mV' in j) piezo.textContent = Number(j.piezo_mV).toFixed(1);
+    if ('drop_pct' in j) drop.textContent  = Number(j.drop_pct).toFixed(1) + '%';
+    if ('objC' in j)     obj.textContent   = Number(j.objC).toFixed(2);
+    if ('ambC' in j)     amb.textContent   = Number(j.ambC).toFixed(2);
+  } catch(e) {}
+};
+</script>
+
+
 <section class="ticker">
   <div class="ticker-content">
     <span>Самообследование *</span>
@@ -85,3 +127,4 @@
 
 </body>
 </html>
+
