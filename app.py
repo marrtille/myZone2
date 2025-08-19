@@ -127,38 +127,75 @@ def _risk_label_from_proba(proba):
         p1 = float(proba[0,1])
         return "Низкий риск" if p1 < 0.33 else ("Средний риск" if p1 < 0.66 else "Высокий риск")
 
-def _safe_shap_contrib(model, X, feature_names):
-    """Return 1-D signed contributions aligned to feature_names."""
+def _bg_for_kernel(feature_names: list[str]) -> pd.DataFrame:
+    """
+    Small, reasonable background for KernelExplainer when we don't have training data.
+    Uses typical medians and toggles of binary features to give contrast.
+    """
+    base = {
+        "age": 45, "sex": 1, "bmi": 25.0,
+        "family_history": 0, "smoking": 0, "alcohol": 0,
+        "early_periods": 0, "late_menopause": 0,
+        "ovarian_cancer_history": 0, "low_activity": 0,
+        "hormone_therapy": 0, "brca_mutation": 0,
+        "no_pregnancy_over_40": 0,
+    }
+    # keep only keys the model actually expects
+    base = {k: v for k, v in base.items() if k in feature_names}
+    rows = [base.copy()]
+
+    # a few variations to create contrast
+    if "age" in feature_names:   rows += [{**base, "age": v} for v in (30, 55, 65)]
+    if "bmi" in feature_names:   rows += [{**base, "bmi": v} for v in (22.0, 30.0)]
+    for b in ("family_history","smoking","alcohol","low_activity",
+              "hormone_therapy","brca_mutation","no_pregnancy_over_40",
+              "early_periods","late_menopause","ovarian_cancer_history"):
+        if b in feature_names:
+            rows.append({**base, b: 1})
+
+    bg = pd.DataFrame(rows)[feature_names]
+    return bg
+
+def _safe_shap_contrib(model, X: pd.DataFrame, feature_names: list[str]) -> np.ndarray:
+    """
+    Return 1-D signed contributions for the *positive* class.
+    Uses TreeExplainer for tree models; KernelExplainer otherwise with a small background.
+    """
     contrib = None
     if SHAP_AVAILABLE:
         try:
-            explainer = shap.Explainer(model, X)
-            sv = explainer(X)
-            raw = getattr(sv, "values", None)
-            if raw is not None:
-                arr = np.asarray(raw)
-                # take the first sample only
-                if arr.ndim >= 1:
-                    arr = arr[0]
-                # if (n_features, n_classes), average across classes
-                if arr.ndim == 2:
-                    arr = arr[:, 1] if arr.shape[1] > 1 else arr[:, 0]
-                # ensure 1-D
-                arr = np.squeeze(arr)
-                if arr.ndim == 0:
-                    arr = np.array([float(arr)], dtype=float)
-                contrib = np.asarray(arr, dtype=float)
+            # Heuristic: tree-like models expose estimators_ or tree_
+            is_tree = hasattr(model, "estimators_") or hasattr(model, "tree_")
+            if is_tree:
+                # TreeExplainer usually returns list per class for classifiers
+                explainer = shap.TreeExplainer(model)
+                sv = explainer.shap_values(X)
+                if isinstance(sv, list):          # legacy API
+                    arr = np.asarray(sv[1][0]) if len(sv) > 1 else np.asarray(sv[0][0])
+                else:                               # modern API
+                    vals = getattr(sv, "values", None)
+                    arr = np.asarray(vals[0]) if vals is not None else np.asarray(sv)[0]
+            else:
+                # Non-tree: use KernelExplainer with a real background (not the same row!)
+                bg = _bg_for_kernel(feature_names)
+                explainer = shap.KernelExplainer(model.predict_proba, bg, link="logit")
+                sv = explainer.shap_values(X, nsamples="auto")
+                arr = np.asarray(sv[1][0]) if isinstance(sv, list) else np.asarray(sv)[0]
+
+            arr = np.asarray(arr, dtype=float).squeeze()
+            # If (n_features, n_classes), pick class 1 column (positive risk)
+            if arr.ndim == 2:
+                arr = arr[:, 1] if arr.shape[1] > 1 else arr[:, 0]
+            contrib = arr
         except Exception:
             contrib = None
 
+    # Fallback to feature_importances_ or zeros
     if contrib is None:
         fi = getattr(model, "feature_importances_", None)
-        if fi is not None:
-            contrib = np.asarray(fi, dtype=float)
-        else:
-            contrib = np.zeros(len(feature_names), dtype=float)
+        contrib = np.asarray(fi, dtype=float) if fi is not None else np.zeros(len(feature_names), dtype=float)
 
-    # shape guard
+    # Shape guard
     contrib = np.asarray(contrib, dtype=float).reshape(-1)
     if contrib.shape[0] != len(feature_names):
         contrib = np.resize(contrib, (len(feature_names),))
