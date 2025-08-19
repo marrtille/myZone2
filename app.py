@@ -309,25 +309,35 @@ def export_pdf():
 
 @app.route("/reminder_ics")
 def reminder_ics():
-    risk_label = session.get("last_risk_label", "Низкий риск")
+    # be resilient even if no session values yet
+    risk_label = session.get("last_risk_label") or request.args.get("risk", "Низкий риск")
+
     if "Высокий" in risk_label:
         title, days = "myZone: запишитесь к врачу", 3
     elif "Средний" in risk_label:
         title, days = "myZone: консультация у врача", 7
     else:
         title, days = "myZone: повторная самооценка", 60
+
+    from datetime import datetime, timedelta
     start = (datetime.utcnow() + timedelta(days=days)).strftime("%Y%m%dT%H%M%SZ")
-    ics = f"""BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//myZone//RU
-BEGIN:VEVENT
-DTSTART:{start}
-DURATION:PT30M
-SUMMARY:{title}
-DESCRIPTION:Создано в myZone.
-END:VEVENT
-END:VCALENDAR
-"""
+
+    # ICS requires CRLF line endings; keep text very ASCII-friendly
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//myZone//RU",
+        "BEGIN:VEVENT",
+        f"DTSTART:{start}",
+        "DURATION:PT30M",
+        "SUMMARY:myZone reminder",
+        "DESCRIPTION:Follow up based on your myZone risk result.",
+        "END:VEVENT",
+        "END:VCALENDAR",
+        ""
+    ]
+    ics = "\r\n".join(lines)
+
     resp = make_response(ics)
     resp.headers["Content-Type"] = "text/calendar; charset=utf-8"
     resp.headers["Content-Disposition"] = "attachment; filename=myzone_reminder.ics"
